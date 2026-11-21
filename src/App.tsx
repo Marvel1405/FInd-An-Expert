@@ -1,32 +1,102 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import Home from "./Pages/Home";
-import SignUp from "./Pages/SignUp";
-import SignIn from "./Pages/SignIn";
+import { useEffect, useState } from "react";
+import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import Navbar from "./Components/Navbar";
+import Splashscreen from "./Components/Splashscreen";
 import Dashboard from "./Pages/Dashboard";
+
+export type DashboardTab =
+  | "overview"
+  | "consultants"
+  | "bookings"
+  | "wallet"
+  | "profile";
+
+function AppShell() {
+  const location = useLocation();
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("theme") === "dark";
+    } catch {
+      return false;
+    }
+  });
+  const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [activeNav, setActiveNav] = useState<DashboardTab>("overview");
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("theme", darkMode ? "dark" : "light");
+    } catch {
+      // Ignore storage errors
+    }
+  }, [darkMode]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowSplash(false), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (showSplash) {
+    return <Splashscreen darkMode={darkMode} />;
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
+        color: darkMode ? "#f8fafc" : "#222222",
+        transition: "background-color 0.2s ease, color 0.2s ease",
+      }}
+    >
+      <Navbar
+        darkMode={darkMode}
+        onToggleTheme={() => setDarkMode((prev) => !prev)}
+        activeNav={activeNav}
+        onSelectNav={(tab) => setActiveNav(tab)}
+        currentPath={location.pathname}
+      />
+
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <Dashboard
+              darkMode={darkMode}
+              activeNav={activeNav}
+              onChangeNav={setActiveNav}
+            />
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <Dashboard
+              darkMode={darkMode}
+              activeNav={activeNav}
+              onChangeNav={setActiveNav}
+            />
+          }
+        />
+        <Route
+          path="*"
+          element={
+            <Dashboard
+              darkMode={darkMode}
+              activeNav={activeNav}
+              onChangeNav={setActiveNav}
+            />
+          }
+        />
+      </Routes>
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <BrowserRouter>
-      <nav className="navbar">
-        <Link to="/" className="brand">
-          ConsultPro
-        </Link>
-        <div className="nav-links">
-          <Link to="/signin" className="btn btn-outline">
-            Sign In
-          </Link>
-          <Link to="/signup" className="btn btn-primary">
-            Sign Up
-          </Link>
-        </div>
-      </nav>
-
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/signup" element={<SignUp />} />
-        <Route path="/signin" element={<SignIn />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-      </Routes>
+      <AppShell />
     </BrowserRouter>
   );
 }

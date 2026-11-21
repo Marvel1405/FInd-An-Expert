@@ -7,9 +7,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export interface UserProfile {
   id: string;
-  full_name: string;
-  email: string;
-  role: "client" | "consultant";
-  specialty?: string;
-  kyc_status: string;
+  full_name?: string | null;
+  email?: string | null;
+  role?: "client" | "consultant" | string | null;
+  specialty?: string | null;
+  kyc_status?: string | null;
+  avatar_url?: string | null;
+  phone?: string | null;
+  phone_verified?: boolean | null;
+  created_at?: string;
+  updated_at?: string;
 }

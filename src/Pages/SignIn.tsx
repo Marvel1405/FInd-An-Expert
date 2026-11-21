@@ -2,7 +2,11 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../Lib/supabase";
 
-export default function SignIn() {
+interface SignInProps {
+  darkMode?: boolean;
+}
+
+export default function SignIn({ darkMode = false }: SignInProps) {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,10 +33,24 @@ export default function SignIn() {
     setLoading(false);
   };
 
+  const cardBg = darkMode ? "#111827" : "#ffffff";
+  const textColor = darkMode ? "#f8fafc" : "#222222";
+  const mutedColor = darkMode ? "#94a3b8" : "#57534e";
+  const inputBg = darkMode ? "#0b1020" : "#fdfbf7";
+  const borderColor = darkMode ? "#334155" : "#cbd5e1";
+
   return (
-    <div className="auth-container">
-      <h2>Welcome Back</h2>
-      <p className="sub">
+    <div
+      className="auth-container"
+      style={{
+        backgroundColor: cardBg,
+        color: textColor,
+        border: `1px solid ${borderColor}`,
+        borderRadius: "12px",
+      }}
+    >
+      <h2 style={{ color: textColor }}>Welcome Back</h2>
+      <p className="sub" style={{ color: mutedColor }}>
         Sign in to access your sessions, escrow vault, and archive.
       </p>
 
@@ -40,24 +58,34 @@ export default function SignIn() {
 
       <form onSubmit={handleSignIn}>
         <div className="form-group">
-          <label>Email Address</label>
+          <label style={{ color: textColor }}>Email Address</label>
           <input
             type="email"
             required
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            style={{
+              backgroundColor: inputBg,
+              color: textColor,
+              borderColor,
+            }}
           />
         </div>
 
         <div className="form-group">
-          <label>Password</label>
+          <label style={{ color: textColor }}>Password</label>
           <input
             type="password"
             required
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            style={{
+              backgroundColor: inputBg,
+              color: textColor,
+              borderColor,
+            }}
           />
         </div>
 
@@ -71,8 +99,18 @@ export default function SignIn() {
         </button>
       </form>
 
-      <p style={{ marginTop: "1rem", fontSize: "0.9rem", textAlign: "center" }}>
-        Don&apos;t have an account? <Link to="/signup">Create one</Link>
+      <p
+        style={{
+          marginTop: "1rem",
+          fontSize: "0.9rem",
+          textAlign: "center",
+          color: mutedColor,
+        }}
+      >
+        Don&apos;t have an account?{" "}
+        <Link to="/signup" style={{ color: "#2563eb", fontWeight: 600 }}>
+          Create one
+        </Link>
       </p>
     </div>
   );
