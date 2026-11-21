@@ -78,7 +78,7 @@ export default function SignIn({ darkMode }: SignInProps) {
         } else {
           setMessage({
             type: "success",
-            text: "Account created! Check your email if confirmation is enabled, or sign in now.",
+            text: "Account created on Find An Expert! Check your email if confirmation is enabled, or sign in now.",
           });
           setIsSignUp(false);
         }
@@ -125,8 +125,21 @@ export default function SignIn({ darkMode }: SignInProps) {
         }}
       >
         <div>
-          <h1 style={{ margin: 0, fontSize: "1.35rem" }}>
-            {isSignUp ? "Create Account" : "Sign In"}
+          <span
+            style={{
+              fontSize: "0.72rem",
+              fontWeight: 700,
+              color: accentBlue,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+            }}
+          >
+            FIND AN EXPERT
+          </span>
+          <h1 style={{ margin: "0.2rem 0 0", fontSize: "1.35rem" }}>
+            {isSignUp
+              ? "Create Your Find An Expert Account"
+              : "Sign In to Find An Expert"}
           </h1>
           <p
             style={{
@@ -136,8 +149,8 @@ export default function SignIn({ darkMode }: SignInProps) {
             }}
           >
             {isSignUp
-              ? "Join as a Consultee or Consultant to book and host live audio calls."
-              : "Sign in to access your advisory dashboard, wallet, and live calls."}
+              ? "Join Find An Expert as a Consultee or Consultant for live audio sessions."
+              : "Sign in to access your Find An Expert dashboard, wallet, and live calls."}
           </p>
         </div>
 

@@ -26,6 +26,10 @@ function AppShell() {
   const [activeNav, setActiveNav] = useState<DashboardTab>("overview");
 
   useEffect(() => {
+    document.title = "Find An Expert";
+  }, []);
+
+  useEffect(() => {
     try {
       localStorage.setItem("theme", darkMode ? "dark" : "light");
     } catch {

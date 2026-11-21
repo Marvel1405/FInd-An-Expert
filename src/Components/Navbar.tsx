@@ -164,7 +164,7 @@ export default function Navbar({
           >
             <img
               src="/icon.png"
-              alt="App Icon"
+              alt="Find An Expert Icon"
               style={{
                 width: "26px",
                 height: "26px",
@@ -172,7 +172,7 @@ export default function Navbar({
                 objectFit: "cover",
               }}
             />
-            <span>MicroAdvisory</span>
+            <span>Find An Expert</span>
           </Link>
         </div>
 
@@ -247,7 +247,7 @@ export default function Navbar({
                 marginBottom: "0.65rem",
               }}
             >
-              <strong style={{ fontSize: "0.98rem" }}>Navigation</strong>
+              <strong style={{ fontSize: "0.98rem" }}>Find An Expert</strong>
               <button
                 type="button"
                 aria-label="Close menu"

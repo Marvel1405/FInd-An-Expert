@@ -24,7 +24,7 @@ export default function Splashscreen({ darkMode }: SplashscreenProps) {
       `}</style>
       <img
         src="/icon.png"
-        alt="Loading"
+        alt="Find An Expert"
         style={{
           width: "64px",
           height: "64px",
@@ -32,8 +32,11 @@ export default function Splashscreen({ darkMode }: SplashscreenProps) {
           animation: "spinIcon 1.2s linear infinite",
         }}
       />
-      <span style={{ fontSize: "0.9rem", fontWeight: 600, opacity: 0.8 }}>
-        Preparing your live advisory hub...
+      <strong style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+        Find An Expert
+      </strong>
+      <span style={{ fontSize: "0.88rem", fontWeight: 500, opacity: 0.8 }}>
+        Preparing your Find An Expert live advisory hub...
       </span>
     </div>
   );

@@ -112,13 +112,11 @@ export default function Dashboard({
   const [transactions, setTransactions] = useState<DbWalletTransaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<DbBankWithdrawal[]>([]);
 
-  // Accepted & live call tracking
   const [acceptedCallIds, setAcceptedCallIds] = useState<string[]>([]);
   const [liveCallBooking, setLiveCallBooking] =
     useState<BookingWithSummary | null>(null);
   const [liveSeconds, setLiveSeconds] = useState<number>(0);
 
-  // Consultee booking form
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedConsultantId, setSelectedConsultantId] = useState<string>("");
   const [bookingTopic, setBookingTopic] = useState("");
@@ -127,16 +125,13 @@ export default function Dashboard({
     () => new Date().toISOString().split("T")[0]
   );
 
-  // Consultee wallet input
   const [walletAmountInput, setWalletAmountInput] = useState<string>("");
 
-  // Bank withdrawal form
   const [bankName, setBankName] = useState<string>(NIGERIAN_BANKS[2]);
   const [accountNumber, setAccountNumber] = useState<string>("");
   const [accountName, setAccountName] = useState<string>("");
   const [withdrawAmountInput, setWithdrawAmountInput] = useState<string>("");
 
-  // Editable profile fields + photo + phone SMS verification
   const [editFullName, setEditFullName] = useState<string>("");
   const [editRole, setEditRole] = useState<"client" | "consultant">("client");
   const [editSpecialty, setEditSpecialty] = useState<string>("");
@@ -345,7 +340,7 @@ export default function Dashboard({
   if (loading) {
     return (
       <div style={{ padding: "3rem", textAlign: "center" }}>
-        <p>Loading your live advisory hub...</p>
+        <p>Loading your Find An Expert live advisory hub...</p>
       </div>
     );
   }
@@ -967,76 +962,80 @@ export default function Dashboard({
         gap: "1.35rem",
       }}
     >
-      {/* Distinct Role Banner */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "0.85rem",
-          backgroundColor: bgCard,
-          border: `1px solid ${borderColor}`,
-          borderRadius: "12px",
-          padding: "1.15rem 1.35rem",
-        }}
-      >
-        <div>
-          <span
-            style={{
-              fontSize: "0.72rem",
-              fontWeight: 700,
-              letterSpacing: "0.05em",
-              color: isConsultant ? "#16a34a" : accentBlue,
-              textTransform: "uppercase",
-            }}
-          >
-            {isConsultant
-              ? "CONSULTANT CONSOLE · LIVE AUDIO CALLS & PAYOUT WITHDRAWALS"
-              : "CONSULTEE DESK · WALLET TOP-UP, BOOK CALLS & LIVE AUDIO"}
-          </span>
-          <h1 style={{ margin: "0.2rem 0 0", fontSize: "1.4rem" }}>
-            {isConsultant
-              ? `Live Call Desk, ${displayName.split(" ")[0]}!`
-              : `Your Next Breakthrough Starts Now, ${
-                  displayName.split(" ")[0]
-                }!`}
-          </h1>
-          <p
-            style={{
-              margin: "0.25rem 0 0",
-              fontSize: "0.86rem",
-              color: textMuted,
-            }}
-          >
-            {displayEmail} · Role:{" "}
-            <strong>{isConsultant ? "Consultant" : "Consultee"}</strong>
-            {activePhone
-              ? ` · ${activePhone} (${
-                  isPhoneVerified ? "SMS Verified" : "Unverified"
-                })`
-              : ""}
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onChangeNav(isConsultant ? "bookings" : "consultants")}
+      {/* Distinct Role Banner — Overview Only */}
+      {activeNav === "overview" && (
+        <div
           style={{
-            padding: "0.6rem 1rem",
-            borderRadius: "8px",
-            border: "none",
-            backgroundColor: accentBlue,
-            color: "#ffffff",
-            fontWeight: 600,
-            cursor: "pointer",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.85rem",
+            backgroundColor: bgCard,
+            border: `1px solid ${borderColor}`,
+            borderRadius: "12px",
+            padding: "1.15rem 1.35rem",
           }}
         >
-          {isConsultant
-            ? `Incoming Calls (${pendingIncomingRequests.length})`
-            : "Book a Call"}
-        </button>
-      </div>
+          <div>
+            <span
+              style={{
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                color: isConsultant ? "#16a34a" : accentBlue,
+                textTransform: "uppercase",
+              }}
+            >
+              {isConsultant
+                ? "FIND AN EXPERT · CONSULTANT CONSOLE · LIVE AUDIO CALLS & PAYOUT WITHDRAWALS"
+                : "FIND AN EXPERT · CONSULTEE DESK · WALLET TOP-UP, BOOK CALLS & LIVE AUDIO"}
+            </span>
+            <h1 style={{ margin: "0.2rem 0 0", fontSize: "1.4rem" }}>
+              {isConsultant
+                ? `Live Call Desk, ${displayName.split(" ")[0]}!`
+                : `Your Next Breakthrough Starts Now, ${
+                    displayName.split(" ")[0]
+                  }!`}
+            </h1>
+            <p
+              style={{
+                margin: "0.25rem 0 0",
+                fontSize: "0.86rem",
+                color: textMuted,
+              }}
+            >
+              {displayEmail} · Role:{" "}
+              <strong>{isConsultant ? "Consultant" : "Consultee"}</strong>
+              {activePhone
+                ? ` · ${activePhone} (${
+                    isPhoneVerified ? "SMS Verified" : "Unverified"
+                  })`
+                : ""}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              onChangeNav(isConsultant ? "bookings" : "consultants")
+            }
+            style={{
+              padding: "0.6rem 1rem",
+              borderRadius: "8px",
+              border: "none",
+              backgroundColor: accentBlue,
+              color: "#ffffff",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {isConsultant
+              ? `Incoming Calls (${pendingIncomingRequests.length})`
+              : "Book a Call"}
+          </button>
+        </div>
+      )}
 
       {/* Persistent Account Overview Summary Across Dashboard Navs */}
       <div
@@ -1762,7 +1761,7 @@ export default function Dashboard({
                         cursor: "pointer",
                       }}
                     >
-                      Accept & Start Call
+                      Accept &amp; Start Call
                     </button>
                   </div>
 
@@ -2198,7 +2197,7 @@ export default function Dashboard({
             }}
           >
             <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.08rem" }}>
-              Transactions & Withdrawals
+              Transactions &amp; Withdrawals
             </h2>
             {transactions.length === 0 && withdrawals.length === 0 ? (
               <p style={{ color: textMuted, margin: 0 }}>
@@ -2456,7 +2455,7 @@ export default function Dashboard({
               }}
             >
               <strong style={{ fontSize: "0.92rem" }}>
-                Phone Number & Text Verification
+                Phone Number &amp; Text Verification
               </strong>
               <span
                 style={{
@@ -2575,6 +2574,24 @@ export default function Dashboard({
           </div>
         </div>
       )}
+
+      <footer
+        style={{
+          marginTop: "auto",
+          paddingTop: "1rem",
+          borderTop: `1px solid ${borderColor}`,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "0.5rem",
+          fontSize: "0.8rem",
+          color: textMuted,
+        }}
+      >
+        <span>Find An Expert</span>
+        <span>Escrow-Protected Advisory &amp; Live Audio</span>
+      </footer>
     </main>
   );
 }
