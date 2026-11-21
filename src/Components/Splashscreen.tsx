@@ -17,11 +17,11 @@ export default function Splashscreen({ darkMode }: SplashscreenProps) {
       }}
     >
       <style>{`
-          @keyframes spinIcon {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-          }
-        `}</style>
+        @keyframes spinIcon {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
       <img
         src="/icon.png"
         alt="Loading"

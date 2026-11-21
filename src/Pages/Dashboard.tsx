@@ -118,7 +118,7 @@ export default function Dashboard({
     useState<BookingWithSummary | null>(null);
   const [liveSeconds, setLiveSeconds] = useState<number>(0);
 
-  // Consultee booking form (requires complaint summary before call starts)
+  // Consultee booking form
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedConsultantId, setSelectedConsultantId] = useState<string>("");
   const [bookingTopic, setBookingTopic] = useState("");
@@ -127,10 +127,10 @@ export default function Dashboard({
     () => new Date().toISOString().split("T")[0]
   );
 
-  // Consultee wallet top-up / remove input
+  // Consultee wallet input
   const [walletAmountInput, setWalletAmountInput] = useState<string>("");
 
-  // Bank withdrawal form (available for withdrawal)
+  // Bank withdrawal form
   const [bankName, setBankName] = useState<string>(NIGERIAN_BANKS[2]);
   const [accountNumber, setAccountNumber] = useState<string>("");
   const [accountName, setAccountName] = useState<string>("");
@@ -211,69 +211,83 @@ export default function Dashboard({
   );
 
   useEffect(() => {
+    let active = true;
+
     const init = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        navigate("/signin");
-        return;
-      }
-
-      setAuthUser(user);
-
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      const metaAvatar = (user.user_metadata?.avatar_url as string) || "";
-      const metaPhone =
-        (user.user_metadata?.phone as string) || user.phone || "";
-      const metaVerified = Boolean(user.user_metadata?.phone_verified);
-
-      if (profileData) {
-        const typedProfile = profileData as UserProfile;
-        setProfile(typedProfile);
-        setAccountName(typedProfile.full_name || "");
-        setEditFullName(typedProfile.full_name || "");
-        setEditRole(
-          typedProfile.role === "consultant" ? "consultant" : "client"
-        );
-        setEditSpecialty(typedProfile.specialty || "");
-        setAvatarUrl(typedProfile.avatar_url || metaAvatar);
-        setPhoneInput(typedProfile.phone || metaPhone);
-        setPhoneVerified(Boolean(typedProfile.phone_verified ?? metaVerified));
-      } else {
-        const fallbackName =
-          (user.user_metadata?.full_name as string) ||
-          user.email?.split("@")[0] ||
-          "Member";
-        setEditFullName(fallbackName);
-        setAccountName(fallbackName);
-        setAvatarUrl(metaAvatar);
-        setPhoneInput(metaPhone);
-        setPhoneVerified(metaVerified);
-      }
-
       try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!active) return;
+
+        if (!user) {
+          navigate("/signin", { replace: true });
+          return;
+        }
+
+        setAuthUser(user);
+
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        const metaAvatar = (user.user_metadata?.avatar_url as string) || "";
+        const metaPhone =
+          (user.user_metadata?.phone as string) || user.phone || "";
+        const metaVerified = Boolean(user.user_metadata?.phone_verified);
+
+        if (profileData) {
+          const typedProfile = profileData as UserProfile;
+          setProfile(typedProfile);
+          setAccountName(typedProfile.full_name || "");
+          setEditFullName(typedProfile.full_name || "");
+          setEditRole(
+            typedProfile.role === "consultant" ? "consultant" : "client"
+          );
+          setEditSpecialty(typedProfile.specialty || "");
+          setAvatarUrl(typedProfile.avatar_url || metaAvatar);
+          setPhoneInput(typedProfile.phone || metaPhone);
+          setPhoneVerified(
+            Boolean(typedProfile.phone_verified ?? metaVerified)
+          );
+        } else {
+          const fallbackName =
+            (user.user_metadata?.full_name as string) ||
+            user.email?.split("@")[0] ||
+            "Member";
+          setEditFullName(fallbackName);
+          setAccountName(fallbackName);
+          setAvatarUrl(metaAvatar);
+          setPhoneInput(metaPhone);
+          setPhoneVerified(metaVerified);
+        }
+
         await refreshPortalState(user.id);
       } catch (err) {
-        setFeedback({
-          type: "error",
-          text:
-            err instanceof Error
-              ? err.message
-              : "Unable to load dashboard data.",
-        });
+        if (active) {
+          setFeedback({
+            type: "error",
+            text:
+              err instanceof Error
+                ? err.message
+                : "Unable to load dashboard data.",
+          });
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
     init();
+
+    return () => {
+      active = false;
+    };
   }, [navigate, refreshPortalState]);
 
   useEffect(() => {
@@ -1413,7 +1427,7 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* CONSULTEE VIEW: AVAILABLE CONSULTANTS & BOOK CALL WITH COMPLAINT SUMMARY */}
+      {/* CONSULTEE VIEW */}
       {activeNav === "consultants" && !isConsultant && (
         <div
           style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
@@ -1670,7 +1684,7 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* CONSULTANT VIEW: INCOMING CALL REQUESTS & LIVE CALL CONTROLS */}
+      {/* CONSULTANT VIEW */}
       {activeNav === "consultants" && isConsultant && (
         <div
           style={{
@@ -1936,7 +1950,7 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* WALLET: ONLY CONSULTEE CAN TOP UP; CONSULTANT ONLY WITHDRAWS */}
+      {/* WALLET */}
       {activeNav === "wallet" && (
         <div
           style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
@@ -2237,7 +2251,7 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* EDITABLE PROFILE SECTION: PHOTO + PHONE + SMS VERIFICATION */}
+      {/* EDITABLE PROFILE SECTION */}
       {activeNav === "profile" && (
         <div
           style={{
@@ -2252,7 +2266,6 @@ export default function Dashboard({
         >
           <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Edit Profile</h2>
 
-          {/* Profile Photo Upload */}
           <div
             style={{
               display: "flex",
@@ -2334,7 +2347,6 @@ export default function Dashboard({
             </div>
           </div>
 
-          {/* Core Profile Fields */}
           <form
             onSubmit={handleSaveProfile}
             style={{
@@ -2423,7 +2435,6 @@ export default function Dashboard({
             </button>
           </form>
 
-          {/* Phone Number & Text Message Verification */}
           <div
             style={{
               padding: "1rem",

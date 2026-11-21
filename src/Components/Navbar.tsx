@@ -33,36 +33,40 @@ export default function Navbar({
   const [avatarUrl, setAvatarUrl] = useState<string>("");
 
   const syncUserIdentity = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (!user) {
-      setUserId(null);
-      setUserName("");
-      setAvatarUrl("");
-      return;
-    }
+      if (!user) {
+        setUserId(null);
+        setUserName("");
+        setAvatarUrl("");
+        return;
+      }
 
-    setUserId(user.id);
-    const fallbackName =
-      (user.user_metadata?.full_name as string) ||
-      user.email?.split("@")[0] ||
-      "Member";
-    const fallbackAvatar = (user.user_metadata?.avatar_url as string) || "";
+      setUserId(user.id);
+      const fallbackName =
+        (user.user_metadata?.full_name as string) ||
+        user.email?.split("@")[0] ||
+        "Member";
+      const fallbackAvatar = (user.user_metadata?.avatar_url as string) || "";
 
-    setUserName(fallbackName);
-    setAvatarUrl(fallbackAvatar);
+      setUserName(fallbackName);
+      setAvatarUrl(fallbackAvatar);
 
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("full_name, avatar_url")
-      .eq("id", user.id)
-      .maybeSingle();
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("full_name, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
 
-    if (prof) {
-      if (prof.full_name) setUserName(String(prof.full_name));
-      setAvatarUrl(String(prof.avatar_url || fallbackAvatar || ""));
+      if (prof) {
+        if (prof.full_name) setUserName(String(prof.full_name));
+        setAvatarUrl(String(prof.avatar_url || fallbackAvatar || ""));
+      }
+    } catch {
+      // Ignore transient auth check errors
     }
   }, []);
 
@@ -80,7 +84,6 @@ export default function Navbar({
     };
   }, [syncUserIdentity]);
 
-  // Refresh avatar & name whenever the drawer opens or activeNav changes
   useEffect(() => {
     if (drawerOpen || activeNav === "profile") {
       syncUserIdentity();
@@ -90,7 +93,7 @@ export default function Navbar({
   const handleLogout = async () => {
     setDrawerOpen(false);
     await supabase.auth.signOut();
-    navigate("/signin");
+    navigate("/signin", { replace: true });
   };
 
   const isHome = currentPath === "/";
@@ -147,7 +150,7 @@ export default function Navbar({
           </button>
 
           <Link
-            to="/dashboard"
+            to="/"
             onClick={() => onSelectNav("overview")}
             style={{
               display: "flex",
@@ -290,7 +293,6 @@ export default function Navbar({
               );
             })}
 
-            {/* Circular Avatar + Name Displayed Exclusively Right Above Log Out */}
             {userId && (
               <div
                 style={{

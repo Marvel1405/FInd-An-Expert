@@ -3,6 +3,8 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import Navbar from "./Components/Navbar";
 import Splashscreen from "./Components/Splashscreen";
 import Dashboard from "./Pages/Dashboard";
+import Home from "./Pages/Home";
+import SignIn from "./Pages/SignIn";
 
 export type DashboardTab =
   | "overview"
@@ -58,16 +60,9 @@ function AppShell() {
       />
 
       <Routes>
-        <Route
-          path="/"
-          element={
-            <Dashboard
-              darkMode={darkMode}
-              activeNav={activeNav}
-              onChangeNav={setActiveNav}
-            />
-          }
-        />
+        <Route path="/" element={<Home darkMode={darkMode} />} />
+        <Route path="/signin" element={<SignIn darkMode={darkMode} />} />
+        <Route path="/login" element={<SignIn darkMode={darkMode} />} />
         <Route
           path="/dashboard"
           element={
@@ -78,16 +73,7 @@ function AppShell() {
             />
           }
         />
-        <Route
-          path="*"
-          element={
-            <Dashboard
-              darkMode={darkMode}
-              activeNav={activeNav}
-              onChangeNav={setActiveNav}
-            />
-          }
-        />
+        <Route path="*" element={<Home darkMode={darkMode} />} />
       </Routes>
     </div>
   );
