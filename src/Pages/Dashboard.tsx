@@ -112,11 +112,13 @@ export default function Dashboard({
   const [transactions, setTransactions] = useState<DbWalletTransaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<DbBankWithdrawal[]>([]);
 
+  // Accepted & live call tracking
   const [acceptedCallIds, setAcceptedCallIds] = useState<string[]>([]);
   const [liveCallBooking, setLiveCallBooking] =
     useState<BookingWithSummary | null>(null);
   const [liveSeconds, setLiveSeconds] = useState<number>(0);
 
+  // Consultee booking form
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedConsultantId, setSelectedConsultantId] = useState<string>("");
   const [bookingTopic, setBookingTopic] = useState("");
@@ -125,13 +127,16 @@ export default function Dashboard({
     () => new Date().toISOString().split("T")[0]
   );
 
+  // Consultee wallet input
   const [walletAmountInput, setWalletAmountInput] = useState<string>("");
 
+  // Bank withdrawal form
   const [bankName, setBankName] = useState<string>(NIGERIAN_BANKS[2]);
   const [accountNumber, setAccountNumber] = useState<string>("");
   const [accountName, setAccountName] = useState<string>("");
   const [withdrawAmountInput, setWithdrawAmountInput] = useState<string>("");
 
+  // Editable profile fields + photo + phone SMS verification
   const [editFullName, setEditFullName] = useState<string>("");
   const [editRole, setEditRole] = useState<"client" | "consultant">("client");
   const [editSpecialty, setEditSpecialty] = useState<string>("");
@@ -340,7 +345,7 @@ export default function Dashboard({
   if (loading) {
     return (
       <div style={{ padding: "3rem", textAlign: "center" }}>
-        <p>Loading your Find An Expert live advisory hub...</p>
+        <p>Loading your Find An Expert workspace...</p>
       </div>
     );
   }
@@ -561,7 +566,7 @@ export default function Dashboard({
     if (walletBalance < selectedConsultant.rate_ngn) {
       setFeedback({
         type: "error",
-        text: `Insufficient balance (₦${selectedConsultant.rate_ngn.toLocaleString()} required). Top up your wallet first.`,
+        text: `Insufficient wallet balance (₦${selectedConsultant.rate_ngn.toLocaleString()} required). Please top up in Wallet & Payouts.`,
       });
       onChangeNav("wallet");
       return;
@@ -962,185 +967,6 @@ export default function Dashboard({
         gap: "1.35rem",
       }}
     >
-      {/* Distinct Role Banner — Overview Only */}
-      {activeNav === "overview" && (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "0.85rem",
-            backgroundColor: bgCard,
-            border: `1px solid ${borderColor}`,
-            borderRadius: "12px",
-            padding: "1.15rem 1.35rem",
-          }}
-        >
-          <div>
-            <span
-              style={{
-                fontSize: "0.72rem",
-                fontWeight: 700,
-                letterSpacing: "0.05em",
-                color: isConsultant ? "#16a34a" : accentBlue,
-                textTransform: "uppercase",
-              }}
-            >
-              {isConsultant
-                ? "FIND AN EXPERT · CONSULTANT CONSOLE · LIVE AUDIO CALLS & PAYOUT WITHDRAWALS"
-                : "FIND AN EXPERT · CONSULTEE DESK · WALLET TOP-UP, BOOK CALLS & LIVE AUDIO"}
-            </span>
-            <h1 style={{ margin: "0.2rem 0 0", fontSize: "1.4rem" }}>
-              {isConsultant
-                ? `Live Call Desk, ${displayName.split(" ")[0]}!`
-                : `Your Next Breakthrough Starts Now, ${
-                    displayName.split(" ")[0]
-                  }!`}
-            </h1>
-            <p
-              style={{
-                margin: "0.25rem 0 0",
-                fontSize: "0.86rem",
-                color: textMuted,
-              }}
-            >
-              {displayEmail} · Role:{" "}
-              <strong>{isConsultant ? "Consultant" : "Consultee"}</strong>
-              {activePhone
-                ? ` · ${activePhone} (${
-                    isPhoneVerified ? "SMS Verified" : "Unverified"
-                  })`
-                : ""}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              onChangeNav(isConsultant ? "bookings" : "consultants")
-            }
-            style={{
-              padding: "0.6rem 1rem",
-              borderRadius: "8px",
-              border: "none",
-              backgroundColor: accentBlue,
-              color: "#ffffff",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {isConsultant
-              ? `Incoming Calls (${pendingIncomingRequests.length})`
-              : "Book a Call"}
-          </button>
-        </div>
-      )}
-
-      {/* Persistent Account Overview Summary Across Dashboard Navs */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-          gap: "1rem",
-        }}
-      >
-        <div
-          style={{
-            backgroundColor: bgCard,
-            border: `1px solid ${borderColor}`,
-            borderRadius: "10px",
-            padding: "1rem",
-          }}
-        >
-          <div
-            style={{ fontSize: "0.72rem", fontWeight: 700, color: textMuted }}
-          >
-            {isConsultant ? "INCOMING CALLS" : "AVAILABLE EXPERTS"}
-          </div>
-          <div
-            style={{
-              fontSize: "1.55rem",
-              fontWeight: 700,
-              marginTop: "0.35rem",
-            }}
-          >
-            {isConsultant
-              ? pendingIncomingRequests.length
-              : availableConsultants.length}
-          </div>
-        </div>
-        <div
-          style={{
-            backgroundColor: bgCard,
-            border: `1px solid ${borderColor}`,
-            borderRadius: "10px",
-            padding: "1rem",
-          }}
-        >
-          <div
-            style={{ fontSize: "0.72rem", fontWeight: 700, color: textMuted }}
-          >
-            TOTAL CALLS
-          </div>
-          <div
-            style={{
-              fontSize: "1.55rem",
-              fontWeight: 700,
-              marginTop: "0.35rem",
-            }}
-          >
-            {totalSessions}
-          </div>
-        </div>
-        <div
-          style={{
-            backgroundColor: bgCard,
-            border: `1px solid ${borderColor}`,
-            borderRadius: "10px",
-            padding: "1rem",
-          }}
-        >
-          <div
-            style={{ fontSize: "0.72rem", fontWeight: 700, color: textMuted }}
-          >
-            ACTIVE / COMPLETED
-          </div>
-          <div
-            style={{
-              fontSize: "1.55rem",
-              fontWeight: 700,
-              marginTop: "0.35rem",
-            }}
-          >
-            {upcomingSessions} / {completedSessions}
-          </div>
-        </div>
-        <div
-          style={{
-            backgroundColor: bgCard,
-            border: `1px solid ${borderColor}`,
-            borderRadius: "10px",
-            padding: "1rem",
-          }}
-        >
-          <div
-            style={{ fontSize: "0.72rem", fontWeight: 700, color: textMuted }}
-          >
-            {isConsultant ? "WITHDRAWABLE BALANCE" : "WALLET BALANCE"}
-          </div>
-          <div
-            style={{
-              fontSize: "1.55rem",
-              fontWeight: 700,
-              marginTop: "0.35rem",
-            }}
-          >
-            ₦{walletBalance.toLocaleString()}
-          </div>
-        </div>
-      </div>
-
       {feedback && (
         <div
           style={{
@@ -1157,7 +983,7 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* LIVE CALL AUDIO & SESSION STAGE */}
+      {/* LIVE CALL AUDIO STAGE (Shown only when a live audio call is active) */}
       {liveCallBooking && (
         <div
           style={{
@@ -1308,97 +1134,231 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* OVERVIEW FEED */}
+      {/* =====================================================================
+          1. DASHBOARD OVERVIEW — Account Overview Only (No Wallet Balance)
+         ===================================================================== */}
       {activeNav === "overview" && (
         <div
-          style={{
-            backgroundColor: bgCard,
-            border: `1px solid ${borderColor}`,
-            borderRadius: "10px",
-            padding: "1.25rem",
-          }}
+          style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
         >
-          <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.1rem" }}>
-            {isConsultant
-              ? "Pending Call Requests to Accept & Start"
-              : "Recent Booked Calls"}
-          </h2>
-          {bookings.length === 0 ? (
-            <p style={{ color: textMuted, margin: 0 }}>
-              {isConsultant
-                ? "No incoming call requests right now."
-                : "No calls booked yet. Open the top-left menu or click Book a Call to get started."}
-            </p>
-          ) : (
-            <div
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.85rem",
+              backgroundColor: bgCard,
+              border: `1px solid ${borderColor}`,
+              borderRadius: "12px",
+              padding: "1.15rem 1.35rem",
+            }}
+          >
+            <div>
+              <span
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  color: isConsultant ? "#16a34a" : accentBlue,
+                  textTransform: "uppercase",
+                }}
+              >
+                {isConsultant
+                  ? "FIND AN EXPERT · CONSULTANT CONSOLE"
+                  : "FIND AN EXPERT · CONSULTEE DESK"}
+              </span>
+              <h1 style={{ margin: "0.2rem 0 0", fontSize: "1.4rem" }}>
+                {isConsultant
+                  ? `Live Call Desk, ${displayName.split(" ")[0]}!`
+                  : `Your Next Breakthrough Starts Now, ${
+                      displayName.split(" ")[0]
+                    }!`}
+              </h1>
+              <p
+                style={{
+                  margin: "0.25rem 0 0",
+                  fontSize: "0.86rem",
+                  color: textMuted,
+                }}
+              >
+                {displayEmail} · Role:{" "}
+                <strong>{isConsultant ? "Consultant" : "Consultee"}</strong>
+                {activePhone
+                  ? ` · ${activePhone} (${
+                      isPhoneVerified ? "SMS Verified" : "Unverified"
+                    })`
+                  : ""}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                onChangeNav(isConsultant ? "bookings" : "consultants")
+              }
               style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.75rem",
+                padding: "0.6rem 1rem",
+                borderRadius: "8px",
+                border: "none",
+                backgroundColor: accentBlue,
+                color: "#ffffff",
+                fontWeight: 600,
+                cursor: "pointer",
               }}
             >
-              {bookings.slice(0, 5).map((b) => {
-                const isAccepted =
-                  acceptedCallIds.includes(b.id) || b.status === "In Progress";
-                return (
-                  <div
-                    key={b.id}
-                    style={{
-                      padding: "0.85rem 1rem",
-                      borderRadius: "8px",
-                      border: `1px solid ${borderColor}`,
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: "0.65rem",
-                    }}
-                  >
-                    <div>
-                      <strong>{b.topic}</strong> with{" "}
-                      <strong>{b.consultant_name}</strong> ({b.session_date})
-                      {b.complaint_summary && (
-                        <div
-                          style={{
-                            fontSize: "0.82rem",
-                            color: textMuted,
-                            marginTop: "0.2rem",
-                          }}
-                        >
-                          Complaint Summary: {b.complaint_summary}
-                        </div>
-                      )}
-                    </div>
+              {isConsultant
+                ? `Incoming Calls (${pendingIncomingRequests.length})`
+                : "Book a Call"}
+            </button>
+          </div>
 
+          {/* Account Overview Metrics (Wallet balance excluded) */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+              gap: "1rem",
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: bgCard,
+                border: `1px solid ${borderColor}`,
+                borderRadius: "10px",
+                padding: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  color: textMuted,
+                }}
+              >
+                {isConsultant ? "INCOMING CALLS" : "AVAILABLE EXPERTS"}
+              </div>
+              <div
+                style={{
+                  fontSize: "1.55rem",
+                  fontWeight: 700,
+                  marginTop: "0.35rem",
+                }}
+              >
+                {isConsultant
+                  ? pendingIncomingRequests.length
+                  : availableConsultants.length}
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: bgCard,
+                border: `1px solid ${borderColor}`,
+                borderRadius: "10px",
+                padding: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  color: textMuted,
+                }}
+              >
+                TOTAL CALLS
+              </div>
+              <div
+                style={{
+                  fontSize: "1.55rem",
+                  fontWeight: 700,
+                  marginTop: "0.35rem",
+                }}
+              >
+                {totalSessions}
+              </div>
+            </div>
+
+            <div
+              style={{
+                backgroundColor: bgCard,
+                border: `1px solid ${borderColor}`,
+                borderRadius: "10px",
+                padding: "1rem",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  color: textMuted,
+                }}
+              >
+                ACTIVE / COMPLETED
+              </div>
+              <div
+                style={{
+                  fontSize: "1.55rem",
+                  fontWeight: 700,
+                  marginTop: "0.35rem",
+                }}
+              >
+                {upcomingSessions} / {completedSessions}
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Account Activity */}
+          <div
+            style={{
+              backgroundColor: bgCard,
+              border: `1px solid ${borderColor}`,
+              borderRadius: "10px",
+              padding: "1.25rem",
+            }}
+          >
+            <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.1rem" }}>
+              {isConsultant
+                ? "Recent Call Requests"
+                : "Recent Account Activity"}
+            </h2>
+            {bookings.length === 0 ? (
+              <p style={{ color: textMuted, margin: 0 }}>
+                {isConsultant
+                  ? "No incoming call requests right now."
+                  : "No calls booked yet. Open Consultants & Call Queue to book your first session."}
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem",
+                }}
+              >
+                {bookings.slice(0, 5).map((b) => {
+                  const isAccepted =
+                    acceptedCallIds.includes(b.id) ||
+                    b.status === "In Progress";
+                  return (
                     <div
+                      key={b.id}
                       style={{
+                        padding: "0.85rem 1rem",
+                        borderRadius: "8px",
+                        border: `1px solid ${borderColor}`,
                         display: "flex",
-                        gap: "0.5rem",
+                        justifyContent: "space-between",
                         alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: "0.65rem",
                       }}
                     >
-                      {b.status !== "Completed" && (
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptAndStartLiveCall(b)}
-                          style={{
-                            padding: "0.42rem 0.85rem",
-                            borderRadius: "7px",
-                            border: "none",
-                            backgroundColor: "#16a34a",
-                            color: "#ffffff",
-                            fontSize: "0.8rem",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                          }}
-                        >
-                          {isConsultant
-                            ? isAccepted
-                              ? "Join Live Audio"
-                              : "Accept & Start Call"
-                            : "Join Audio Call"}
-                        </button>
-                      )}
+                      <div>
+                        <strong>{b.topic}</strong> with{" "}
+                        <strong>{b.consultant_name}</strong> ({b.session_date})
+                      </div>
+
                       <span
                         style={{
                           padding: "0.22rem 0.6rem",
@@ -1412,21 +1372,23 @@ export default function Dashboard({
                         }}
                       >
                         {b.status === "Completed"
-                          ? "Completed · Auto-Paid"
+                          ? "Completed"
                           : isAccepted
                           ? "Live Call Active"
                           : b.status}
                       </span>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* CONSULTEE VIEW */}
+      {/* =====================================================================
+          2. CONSULTANTS & CALL QUEUE — Available Consultants & Booking Button Only
+         ===================================================================== */}
       {activeNav === "consultants" && !isConsultant && (
         <div
           style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
@@ -1449,9 +1411,8 @@ export default function Dashboard({
                 color: textMuted,
               }}
             >
-              Share a summary of your complaint before the call starts. Once the
-              consultant accepts, you can join the live audio room and payment
-              settles automatically on completion.
+              Select an available consultant, enter your topic and pre-call
+              complaint summary, and book your session.
             </p>
 
             {availableConsultants.length === 0 ? (
@@ -1512,7 +1473,7 @@ export default function Dashboard({
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Service Dispute / Technical Advisory"
+                      placeholder="e.g. Finance management"
                       value={bookingTopic}
                       onChange={(e) => setBookingTopic(e.target.value)}
                       style={inputStyle}
@@ -1588,7 +1549,7 @@ export default function Dashboard({
           >
             <input
               type="text"
-              placeholder="Search available registered consultants..."
+              placeholder="Search available consultants..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ ...inputStyle, maxWidth: "420px" }}
@@ -1683,7 +1644,6 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* CONSULTANT VIEW */}
       {activeNav === "consultants" && isConsultant && (
         <div
           style={{
@@ -1703,8 +1663,8 @@ export default function Dashboard({
               color: textMuted,
             }}
           >
-            Review each consultee&apos;s complaint summary below, then accept to
-            start the live audio call immediately.
+            Review incoming call requests and accept to start the live audio
+            call.
           </p>
 
           {pendingIncomingRequests.length === 0 ? (
@@ -1743,7 +1703,7 @@ export default function Dashboard({
                     <div>
                       <strong style={{ fontSize: "1rem" }}>{b.topic}</strong>
                       <div style={{ fontSize: "0.82rem", color: textMuted }}>
-                        Date: {b.session_date} · Payout: ₦
+                        Date: {b.session_date} · Fee: ₦
                         {Number(b.amount_ngn).toLocaleString()}
                       </div>
                     </div>
@@ -1787,7 +1747,9 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* CALLS & ESCROW */}
+      {/* =====================================================================
+          3. CALLS & ESCROW — Previous/Scheduled Calls & Payments Made Only
+         ===================================================================== */}
       {activeNav === "bookings" && (
         <div
           style={{
@@ -1798,12 +1760,12 @@ export default function Dashboard({
           }}
         >
           <h2 style={{ margin: "0 0 1rem", fontSize: "1.12rem" }}>
-            {isConsultant
-              ? "Call Sessions & Completion Payouts"
-              : "Scheduled Calls & Auto-Payout"}
+            Calls &amp; Escrow Payments
           </h2>
           {bookings.length === 0 ? (
-            <p style={{ color: textMuted, margin: 0 }}>No calls booked yet.</p>
+            <p style={{ color: textMuted, margin: 0 }}>
+              No calls or escrow payments yet.
+            </p>
           ) : (
             <div
               style={{
@@ -1839,7 +1801,7 @@ export default function Dashboard({
                       <div>
                         <strong style={{ fontSize: "1rem" }}>{b.topic}</strong>
                         <div style={{ fontSize: "0.82rem", color: textMuted }}>
-                          {b.consultant_name} · {b.session_date} · ₦
+                          {b.consultant_name} · {b.session_date} · Payment: ₦
                           {Number(b.amount_ngn).toLocaleString()}
                           {b.call_room_code
                             ? ` · Room: ${b.call_room_code}`
@@ -1868,10 +1830,10 @@ export default function Dashboard({
                           }}
                         >
                           {b.status === "Completed"
-                            ? "Completed · Auto-Paid"
+                            ? "Completed · Paid Out"
                             : isAccepted
                             ? "Live Call Active"
-                            : "Escrow Active"}
+                            : "Paid in Escrow"}
                         </span>
 
                         {b.status !== "Completed" && (
@@ -1949,7 +1911,9 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* WALLET */}
+      {/* =====================================================================
+          4. WALLET & PAYOUTS — Wallet Balance, Top Up, Withdrawals & Histories Only
+         ===================================================================== */}
       {activeNav === "wallet" && (
         <div
           style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
@@ -1973,9 +1937,7 @@ export default function Dashboard({
                   color: textMuted,
                 }}
               >
-                {isConsultant
-                  ? "CONSULTANT PAYOUT BALANCE"
-                  : "CONSULTEE WALLET BALANCE"}
+                {isConsultant ? "CONSULTANT PAYOUT BALANCE" : "WALLET BALANCE"}
               </div>
               <div
                 style={{
@@ -1988,8 +1950,8 @@ export default function Dashboard({
               </div>
               <p style={{ margin: 0, fontSize: "0.84rem", color: textMuted }}>
                 {isConsultant
-                  ? "Session payouts credit here automatically when sessions complete. Consultants can only withdraw funds."
-                  : "Top up your wallet to book calls, and receive automatic settlements when sessions complete."}
+                  ? "Session payouts credit here automatically when sessions complete. Withdraw to your local bank account below."
+                  : "Top up your wallet to book calls or withdraw funds to your local bank account."}
               </p>
             </div>
 
@@ -2188,6 +2150,7 @@ export default function Dashboard({
             </form>
           </div>
 
+          {/* Wallet Transaction History */}
           <div
             style={{
               backgroundColor: bgCard,
@@ -2197,11 +2160,11 @@ export default function Dashboard({
             }}
           >
             <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.08rem" }}>
-              Transactions &amp; Withdrawals
+              Wallet Transaction History
             </h2>
-            {transactions.length === 0 && withdrawals.length === 0 ? (
+            {transactions.length === 0 ? (
               <p style={{ color: textMuted, margin: 0 }}>
-                No transactions recorded yet.
+                No wallet transactions recorded yet.
               </p>
             ) : (
               <div
@@ -2247,10 +2210,68 @@ export default function Dashboard({
               </div>
             )}
           </div>
+
+          {/* Bank Withdrawal History */}
+          <div
+            style={{
+              backgroundColor: bgCard,
+              border: `1px solid ${borderColor}`,
+              borderRadius: "12px",
+              padding: "1.25rem",
+            }}
+          >
+            <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.08rem" }}>
+              Bank Withdrawal History
+            </h2>
+            {withdrawals.length === 0 ? (
+              <p style={{ color: textMuted, margin: 0 }}>
+                No bank withdrawals recorded yet.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.6rem",
+                }}
+              >
+                {withdrawals.map((wd) => (
+                  <div
+                    key={wd.id}
+                    style={{
+                      padding: "0.72rem 0.9rem",
+                      borderRadius: "8px",
+                      border: `1px solid ${borderColor}`,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>
+                        {wd.bank_name} · {wd.account_number} ({wd.account_name})
+                      </div>
+                      <div style={{ fontSize: "0.76rem", color: textMuted }}>
+                        Status: {wd.status} ·{" "}
+                        {new Date(wd.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: 700, color: "#ef4444" }}>
+                      -₦{Number(wd.amount_ngn).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      {/* EDITABLE PROFILE SECTION */}
+      {/* =====================================================================
+          5. PROFILE SETTINGS — Profile, Edit Profile, Photo & SMS Verification Only
+         ===================================================================== */}
       {activeNav === "profile" && (
         <div
           style={{
@@ -2263,7 +2284,7 @@ export default function Dashboard({
             gap: "1.25rem",
           }}
         >
-          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Edit Profile</h2>
+          <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Profile Settings</h2>
 
           <div
             style={{
@@ -2317,10 +2338,10 @@ export default function Dashboard({
                 gap: "0.35rem",
               }}
             >
-              <strong style={{ fontSize: "0.92rem" }}>Profile Photo</strong>
-              <span style={{ fontSize: "0.8rem", color: textMuted }}>
-                Upload a photo (JPG, PNG, WebP). Your circular photo and name
-                appear in the menu right above Log Out.
+              <strong style={{ fontSize: "0.95rem" }}>{displayName}</strong>
+              <span style={{ fontSize: "0.82rem", color: textMuted }}>
+                {displayEmail} · Role:{" "}
+                <strong>{isConsultant ? "Consultant" : "Consultee"}</strong>
               </span>
               <label
                 style={{
@@ -2410,7 +2431,7 @@ export default function Dashboard({
               </label>
               <input
                 type="text"
-                placeholder="e.g. FinTech, Legal, Software"
+                placeholder="e.g. Accounting, Finance, Strategy"
                 value={editSpecialty}
                 onChange={(e) => setEditSpecialty(e.target.value)}
                 style={inputStyle}
