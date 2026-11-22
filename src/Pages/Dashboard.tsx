@@ -1,14 +1,8 @@
-import {
-  useCallback,
-  useEffect,
-  useState,
-  type ChangeEvent,
-  type FormEvent,
-} from "react";
-import { useNavigate } from "react-router-dom";
-import type { User } from "@supabase/supabase-js";
-import { supabase, type UserProfile } from "../Lib/supabase";
-import type { DashboardTab } from "../App";
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { User } from '@supabase/supabase-js';
+import { supabase, type UserProfile } from '../Lib/supabase';
+import type { DashboardTab } from '../App';
 import {
   adjustWalletBalanceRpc,
   completeBookingPayoutRpc,
@@ -21,8 +15,8 @@ import {
   type DbBankWithdrawal,
   type DbBooking,
   type DbWalletTransaction,
-} from "../Lib/portalData";
-import { useWebRtcAudioCall } from "../Lib/useWebRtcAudioCall";
+} from '../Lib/portalData';
+import { useWebRtcCall, type CallMediaMode } from '../Lib/useWebRtcCall';
 
 interface DashboardProps {
   darkMode: boolean;
@@ -41,26 +35,26 @@ interface RegisteredConsultant {
 interface BookingWithSummary extends DbBooking {
   complaint_summary?: string | null;
   call_room_code?: string | null;
+  call_mode?: CallMediaMode | null;
 }
 
 const NIGERIAN_BANKS = [
-  "Access Bank",
-  "First Bank of Nigeria",
-  "GTBank (Guaranty Trust Bank)",
-  "Kuda Microfinance Bank",
-  "Moniepoint MFB",
-  "OPay",
-  "United Bank for Africa (UBA)",
-  "Zenith Bank",
+  'Access Bank',
+  'First Bank of Nigeria',
+  'GTBank (Guaranty Trust Bank)',
+  'Kuda Microfinance Bank',
+  'Moniepoint MFB',
+  'OPay',
+  'United Bank for Africa (UBA)',
+  'Zenith Bank',
 ];
 
 function normalizePhoneNumber(raw: string): string {
-  const cleaned = raw.replace(/[^\d+]/g, "");
-  if (!cleaned) return "";
-  if (cleaned.startsWith("+")) return cleaned;
-  if (cleaned.startsWith("234")) return `+${cleaned}`;
-  if (cleaned.startsWith("0") && cleaned.length === 11)
-    return `+234${cleaned.slice(1)}`;
+  const cleaned = raw.replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+  if (cleaned.startsWith('+')) return cleaned;
+  if (cleaned.startsWith('234')) return `+${cleaned}`;
+  if (cleaned.startsWith('0') && cleaned.length === 11) return `+234${cleaned.slice(1)}`;
   return `+${cleaned}`;
 }
 
@@ -71,94 +65,86 @@ async function fileToAvatarDataUrl(file: File): Promise<string> {
       const img = new Image();
       img.onload = () => {
         const size = 180;
-        const canvas = document.createElement("canvas");
+        const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
-        const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext('2d');
         if (!ctx) {
-          reject(new Error("Could not process image."));
+          reject(new Error('Could not process image.'));
           return;
         }
         const minSide = Math.min(img.width, img.height);
         const sx = (img.width - minSide) / 2;
         const sy = (img.height - minSide) / 2;
         ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-        resolve(canvas.toDataURL("image/jpeg", 0.82));
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
       };
-      img.onerror = () => reject(new Error("Invalid image file selected."));
-      img.src = String(reader.result || "");
+      img.onerror = () => reject(new Error('Invalid image file selected.'));
+      img.src = String(reader.result || '');
     };
-    reader.onerror = () => reject(new Error("Failed to read photo file."));
+    reader.onerror = () => reject(new Error('Failed to read photo file.'));
     reader.readAsDataURL(file);
   });
 }
 
-export default function Dashboard({
-  darkMode,
-  activeNav,
-  onChangeNav,
-}: DashboardProps) {
+export default function Dashboard({ darkMode, activeNav, onChangeNav }: DashboardProps) {
   const navigate = useNavigate();
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const [availableConsultants, setAvailableConsultants] = useState<
-    RegisteredConsultant[]
-  >([]);
+  const [availableConsultants, setAvailableConsultants] = useState<RegisteredConsultant[]>([]);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [bookings, setBookings] = useState<BookingWithSummary[]>([]);
   const [transactions, setTransactions] = useState<DbWalletTransaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<DbBankWithdrawal[]>([]);
 
-  // Accepted & live call tracking
+  // Accepted & live call tracking (held persistently until explicitly ended/completed)
   const [acceptedCallIds, setAcceptedCallIds] = useState<string[]>([]);
-  const [liveCallBooking, setLiveCallBooking] =
-    useState<BookingWithSummary | null>(null);
+  const [liveCallBooking, setLiveCallBooking] = useState<BookingWithSummary | null>(null);
   const [liveSeconds, setLiveSeconds] = useState<number>(0);
+  const [bookingCallMode, setBookingCallMode] = useState<CallMediaMode>('video');
+  const [activeCallMode, setActiveCallMode] = useState<CallMediaMode>('video');
 
   // Consultee booking form
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedConsultantId, setSelectedConsultantId] = useState<string>("");
-  const [bookingTopic, setBookingTopic] = useState("");
-  const [complaintSummary, setComplaintSummary] = useState("");
-  const [bookingDate, setBookingDate] = useState(
-    () => new Date().toISOString().split("T")[0]
-  );
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedConsultantId, setSelectedConsultantId] = useState<string>('');
+  const [bookingTopic, setBookingTopic] = useState('');
+  const [complaintSummary, setComplaintSummary] = useState('');
+  const [bookingDate, setBookingDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Consultee wallet input
-  const [walletAmountInput, setWalletAmountInput] = useState<string>("");
+  const [walletAmountInput, setWalletAmountInput] = useState<string>('');
 
   // Bank withdrawal form
   const [bankName, setBankName] = useState<string>(NIGERIAN_BANKS[2]);
-  const [accountNumber, setAccountNumber] = useState<string>("");
-  const [accountName, setAccountName] = useState<string>("");
-  const [withdrawAmountInput, setWithdrawAmountInput] = useState<string>("");
+  const [accountNumber, setAccountNumber] = useState<string>('');
+  const [accountName, setAccountName] = useState<string>('');
+  const [withdrawAmountInput, setWithdrawAmountInput] = useState<string>('');
 
   // Editable profile fields + photo + phone SMS verification
-  const [editFullName, setEditFullName] = useState<string>("");
-  const [editRole, setEditRole] = useState<"client" | "consultant">("client");
-  const [editSpecialty, setEditSpecialty] = useState<string>("");
-  const [avatarUrl, setAvatarUrl] = useState<string>("");
-  const [phoneInput, setPhoneInput] = useState<string>("");
+  const [editFullName, setEditFullName] = useState<string>('');
+  const [editRole, setEditRole] = useState<'client' | 'consultant'>('client');
+  const [editSpecialty, setEditSpecialty] = useState<string>('');
+  const [avatarUrl, setAvatarUrl] = useState<string>('');
+  const [phoneInput, setPhoneInput] = useState<string>('');
   const [phoneVerified, setPhoneVerified] = useState<boolean>(false);
-  const [smsCodeInput, setSmsCodeInput] = useState<string>("");
+  const [smsCodeInput, setSmsCodeInput] = useState<string>('');
   const [smsSent, setSmsSent] = useState<boolean>(false);
-  const [demoOtpCode, setDemoOtpCode] = useState<string>("");
+  const [demoOtpCode, setDemoOtpCode] = useState<string>('');
   const [sendingSms, setSendingSms] = useState<boolean>(false);
   const [verifyingSms, setVerifyingSms] = useState<boolean>(false);
 
-  const [feedback, setFeedback] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(
+    null
+  );
 
   const loadAvailableConsultants = useCallback(async () => {
     const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, specialty, role")
-      .eq("role", "consultant");
+      .from('profiles')
+      .select('id, full_name, specialty, role')
+      .eq('role', 'consultant');
 
     if (error) {
       throw new Error(error.message);
@@ -166,8 +152,8 @@ export default function Dashboard({
 
     const mapped: RegisteredConsultant[] = (data ?? []).map((row, idx) => ({
       id: String(row.id),
-      full_name: String(row.full_name || "Registered Consultant"),
-      specialty: String(row.specialty || "Specialist Advisory"),
+      full_name: String(row.full_name || 'Registered Consultant'),
+      specialty: String(row.specialty || 'Specialist Advisory'),
       rate_ngn: 10000 + idx * 2500,
       is_available: true,
     }));
@@ -176,9 +162,7 @@ export default function Dashboard({
     setAvailableConsultants(onlyAvailable);
     if (onlyAvailable.length > 0) {
       setSelectedConsultantId((prev) =>
-        onlyAvailable.some((item) => item.id === prev)
-          ? prev
-          : onlyAvailable[0].id
+        onlyAvailable.some((item) => item.id === prev) ? prev : onlyAvailable[0].id
       );
     }
   }, []);
@@ -199,12 +183,10 @@ export default function Dashboard({
       setWithdrawals(wds);
 
       const activeFromDb = typedBookings
-        .filter((item) => item.status === "In Progress")
+        .filter((item) => item.status === 'In Progress')
         .map((item) => item.id);
       if (activeFromDb.length > 0) {
-        setAcceptedCallIds((prev) =>
-          Array.from(new Set([...prev, ...activeFromDb]))
-        );
+        setAcceptedCallIds((prev) => Array.from(new Set([...prev, ...activeFromDb])));
       }
     },
     [loadAvailableConsultants]
@@ -222,42 +204,35 @@ export default function Dashboard({
         if (!active) return;
 
         if (!user) {
-          navigate("/signin", { replace: true });
+          navigate('/signin', { replace: true });
           return;
         }
 
         setAuthUser(user);
 
         const { data: profileData } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
           .maybeSingle();
 
-        const metaAvatar = (user.user_metadata?.avatar_url as string) || "";
-        const metaPhone =
-          (user.user_metadata?.phone as string) || user.phone || "";
+        const metaAvatar = (user.user_metadata?.avatar_url as string) || '';
+        const metaPhone = (user.user_metadata?.phone as string) || user.phone || '';
         const metaVerified = Boolean(user.user_metadata?.phone_verified);
 
         if (profileData) {
           const typedProfile = profileData as UserProfile;
           setProfile(typedProfile);
-          setAccountName(typedProfile.full_name || "");
-          setEditFullName(typedProfile.full_name || "");
-          setEditRole(
-            typedProfile.role === "consultant" ? "consultant" : "client"
-          );
-          setEditSpecialty(typedProfile.specialty || "");
+          setAccountName(typedProfile.full_name || '');
+          setEditFullName(typedProfile.full_name || '');
+          setEditRole(typedProfile.role === 'consultant' ? 'consultant' : 'client');
+          setEditSpecialty(typedProfile.specialty || '');
           setAvatarUrl(typedProfile.avatar_url || metaAvatar);
           setPhoneInput(typedProfile.phone || metaPhone);
-          setPhoneVerified(
-            Boolean(typedProfile.phone_verified ?? metaVerified)
-          );
+          setPhoneVerified(Boolean(typedProfile.phone_verified ?? metaVerified));
         } else {
           const fallbackName =
-            (user.user_metadata?.full_name as string) ||
-            user.email?.split("@")[0] ||
-            "Member";
+            (user.user_metadata?.full_name as string) || user.email?.split('@')[0] || 'Member';
           setEditFullName(fallbackName);
           setAccountName(fallbackName);
           setAvatarUrl(metaAvatar);
@@ -269,11 +244,8 @@ export default function Dashboard({
       } catch (err) {
         if (active) {
           setFeedback({
-            type: "error",
-            text:
-              err instanceof Error
-                ? err.message
-                : "Unable to load dashboard data.",
+            type: 'error',
+            text: err instanceof Error ? err.message : 'Unable to load dashboard data.',
           });
         }
       } finally {
@@ -296,8 +268,8 @@ export default function Dashboard({
     const channel = supabase
       .channel(`dashboard-bookings-${authUser.id}`)
       .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "bookings" },
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
         () => {
           refreshPortalState(authUser.id).catch(() => {});
         }
@@ -320,31 +292,35 @@ export default function Dashboard({
     return () => clearInterval(timer);
   }, [liveCallBooking]);
 
-  const isConsultant = (profile?.role || editRole) === "consultant";
+  const isConsultant = (profile?.role || editRole) === 'consultant';
 
   useEffect(() => {
-    setLiveCallBooking(null);
-    setWalletAmountInput("");
+    setWalletAmountInput('');
   }, [isConsultant]);
 
   const {
     callStatus,
     isMuted,
+    isCameraOff,
     remoteConnected,
     mediaError,
+    localVideoRef,
+    remoteVideoRef,
     remoteAudioRef,
     toggleMute,
-    endAudioCall,
-  } = useWebRtcAudioCall({
+    toggleCamera,
+    endCall,
+  } = useWebRtcCall({
     roomCode: liveCallBooking?.call_room_code,
     userId: authUser?.id,
     isInitiator: isConsultant,
     active: Boolean(liveCallBooking),
+    mode: activeCallMode,
   });
 
   if (loading) {
     return (
-      <div style={{ padding: "3rem", textAlign: "center" }}>
+      <div style={{ padding: '3rem', textAlign: 'center' }}>
         <p>Loading your Find An Expert workspace...</p>
       </div>
     );
@@ -354,32 +330,30 @@ export default function Dashboard({
     profile?.full_name ||
     editFullName ||
     (authUser?.user_metadata?.full_name as string) ||
-    authUser?.email?.split("@")[0] ||
-    "Member";
-  const displayEmail =
-    profile?.email || authUser?.email || "member@example.com";
-  const displayKyc = profile?.kyc_status || "pending";
-  const activeAvatar = avatarUrl || profile?.avatar_url || "";
-  const activePhone = phoneInput || profile?.phone || "";
+    authUser?.email?.split('@')[0] ||
+    'Member';
+  const displayEmail = profile?.email || authUser?.email || 'member@example.com';
+  const displayKyc = profile?.kyc_status || 'pending';
+  const activeAvatar = avatarUrl || profile?.avatar_url || '';
+  const activePhone = phoneInput || profile?.phone || '';
   const isPhoneVerified = phoneVerified || Boolean(profile?.phone_verified);
 
   const initials =
     displayName
-      .split(" ")
+      .split(' ')
       .filter(Boolean)
       .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() || "")
-      .join("") || "U";
+      .map((part) => part[0]?.toUpperCase() || '')
+      .join('') || 'U';
 
   const selectedConsultant =
-    availableConsultants.find((c) => c.id === selectedConsultantId) ||
-    availableConsultants[0];
+    availableConsultants.find((c) => c.id === selectedConsultantId) || availableConsultants[0];
 
   const formatTimer = (totalSec: number) => {
     const mins = Math.floor(totalSec / 60)
       .toString()
-      .padStart(2, "0");
-    const secs = (totalSec % 60).toString().padStart(2, "0");
+      .padStart(2, '0');
+    const secs = (totalSec % 60).toString().padStart(2, '0');
     return `${mins}:${secs}`;
   };
 
@@ -387,16 +361,13 @@ export default function Dashboard({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      setFeedback({
-        type: "error",
-        text: "Please select a valid image file (JPG, PNG, or WebP).",
-      });
+    if (!file.type.startsWith('image/')) {
+      setFeedback({ type: 'error', text: 'Please select a valid image file (JPG, PNG, or WebP).' });
       return;
     }
 
     if (file.size > 4 * 1024 * 1024) {
-      setFeedback({ type: "error", text: "Photo must be 4MB or smaller." });
+      setFeedback({ type: 'error', text: 'Photo must be 4MB or smaller.' });
       return;
     }
 
@@ -404,13 +375,13 @@ export default function Dashboard({
       const processedDataUrl = await fileToAvatarDataUrl(file);
       setAvatarUrl(processedDataUrl);
       setFeedback({
-        type: "success",
+        type: 'success',
         text: 'Profile photo ready. Click "Save Changes" to save it to your account.',
       });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Could not process image.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not process image.',
       });
     }
   };
@@ -420,8 +391,8 @@ export default function Dashboard({
     const formattedPhone = normalizePhoneNumber(phoneInput);
     if (!/^\+\d{10,15}$/.test(formattedPhone)) {
       setFeedback({
-        type: "error",
-        text: "Enter a valid phone number (e.g. +2348012345678 or 08012345678).",
+        type: 'error',
+        text: 'Enter a valid phone number (e.g. +2348012345678 or 08012345678).',
       });
       return;
     }
@@ -441,22 +412,19 @@ export default function Dashboard({
       setSmsSent(true);
       if (error) {
         setFeedback({
-          type: "success",
+          type: 'success',
           text: `Verification text code sent to ${formattedPhone}. Enter code ${generatedCode} below to verify.`,
         });
       } else {
         setFeedback({
-          type: "success",
+          type: 'success',
           text: `Text message verification sent to ${formattedPhone}. Enter the 6-digit code below.`,
         });
       }
     } catch (err) {
       setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Unable to send verification text.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Unable to send verification text.',
       });
     } finally {
       setSendingSms(false);
@@ -469,10 +437,7 @@ export default function Dashboard({
     const code = smsCodeInput.trim();
 
     if (!/^\d{6}$/.test(code)) {
-      setFeedback({
-        type: "error",
-        text: "Enter the 6-digit verification code from your text.",
-      });
+      setFeedback({ type: 'error', text: 'Enter the 6-digit verification code from your text.' });
       return;
     }
 
@@ -486,7 +451,7 @@ export default function Dashboard({
         const { error: otpError } = await supabase.auth.verifyOtp({
           phone: formattedPhone,
           token: code,
-          type: "phone_change",
+          type: 'phone_change',
         });
         if (!otpError) {
           verified = true;
@@ -498,15 +463,13 @@ export default function Dashboard({
       }
 
       if (!verified) {
-        throw new Error(
-          "Invalid verification code. Check the 6-digit code and try again."
-        );
+        throw new Error('Invalid verification code. Check the 6-digit code and try again.');
       }
 
       setPhoneVerified(true);
       setSmsSent(false);
-      setSmsCodeInput("");
-      setDemoOtpCode("");
+      setSmsCodeInput('');
+      setDemoOtpCode('');
 
       await supabase.auth.updateUser({
         data: {
@@ -516,25 +479,25 @@ export default function Dashboard({
       });
 
       await supabase
-        .from("profiles")
+        .from('profiles')
         .update({
           phone: formattedPhone,
           phone_verified: true,
         })
-        .eq("id", authUser.id);
+        .eq('id', authUser.id);
 
       setProfile((prev) =>
         prev ? { ...prev, phone: formattedPhone, phone_verified: true } : prev
       );
 
       setFeedback({
-        type: "success",
+        type: 'success',
         text: `Phone number ${formattedPhone} verified via text message!`,
       });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Text verification failed.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Text verification failed.',
       });
     } finally {
       setVerifyingSms(false);
@@ -546,29 +509,26 @@ export default function Dashboard({
     if (!authUser || submitting || isConsultant) return;
 
     if (!selectedConsultant) {
-      setFeedback({
-        type: "error",
-        text: "No available registered consultant selected.",
-      });
+      setFeedback({ type: 'error', text: 'No available registered consultant selected.' });
       return;
     }
     if (!bookingTopic.trim()) {
-      setFeedback({ type: "error", text: "Please enter a call topic." });
+      setFeedback({ type: 'error', text: 'Please enter a call topic.' });
       return;
     }
     if (!complaintSummary.trim() || complaintSummary.trim().length < 10) {
       setFeedback({
-        type: "error",
-        text: "Please provide a summary of your complaint (at least 10 characters) before starting the call.",
+        type: 'error',
+        text: 'Please provide a summary of your complaint (at least 10 characters) before starting the call.',
       });
       return;
     }
     if (walletBalance < selectedConsultant.rate_ngn) {
       setFeedback({
-        type: "error",
+        type: 'error',
         text: `Insufficient wallet balance (₦${selectedConsultant.rate_ngn.toLocaleString()} required). Please top up in Wallet & Payouts.`,
       });
-      onChangeNav("wallet");
+      onChangeNav('wallet');
       return;
     }
 
@@ -576,11 +536,9 @@ export default function Dashboard({
     setFeedback(null);
 
     try {
-      const roomCode = `CALL-${Math.random()
-        .toString(36)
-        .substring(2, 7)
-        .toUpperCase()}`;
+      const roomCode = `CALL-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
       const cleanSummary = complaintSummary.trim();
+      const chosenMode = bookingCallMode;
 
       const bookingId = await createBookingWithEscrowRpc({
         consultantName: selectedConsultant.full_name,
@@ -592,77 +550,73 @@ export default function Dashboard({
       });
 
       await supabase
-        .from("bookings")
+        .from('bookings')
         .update({
           consultant_id: selectedConsultant.id,
           complaint_summary: cleanSummary,
           call_room_code: roomCode,
         })
-        .eq("id", bookingId);
+        .eq('id', bookingId);
 
       await refreshPortalState(authUser.id);
-      setBookingTopic("");
-      setComplaintSummary("");
-      onChangeNav("bookings");
+      setBookingTopic('');
+      setComplaintSummary('');
+      onChangeNav('bookings');
       setFeedback({
-        type: "success",
-        text: `Call request sent to ${
-          selectedConsultant.full_name
-        } (${roomCode}). ₦${selectedConsultant.rate_ngn.toLocaleString()} locked in escrow.`,
+        type: 'success',
+        text: `${chosenMode === 'video' ? 'Video' : 'Audio'} call booked with ${selectedConsultant.full_name} (${roomCode}). ₦${selectedConsultant.rate_ngn.toLocaleString()} locked in escrow.`,
       });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Could not book call.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not book call.',
       });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleAcceptAndStartLiveCall = async (booking: BookingWithSummary) => {
+  const handleAcceptAndStartLiveCall = async (
+    booking: BookingWithSummary,
+    preferredMode?: CallMediaMode
+  ) => {
     const roomCode =
-      booking.call_room_code ||
-      `LIVE-${booking.id.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+      booking.call_room_code || `LIVE-${booking.id.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
+    const resolvedMode: CallMediaMode =
+      preferredMode || booking.call_mode || bookingCallMode || 'video';
 
-    setAcceptedCallIds((prev) =>
-      prev.includes(booking.id) ? prev : [...prev, booking.id]
-    );
+    setAcceptedCallIds((prev) => (prev.includes(booking.id) ? prev : [...prev, booking.id]));
+    setActiveCallMode(resolvedMode);
 
-    if (booking.status !== "Completed") {
-      const nextStatus = isConsultant ? "In Progress" : booking.status;
+    if (booking.status !== 'Completed') {
+      const nextStatus = isConsultant ? 'In Progress' : booking.status;
       await supabase
-        .from("bookings")
+        .from('bookings')
         .update({
           call_room_code: roomCode,
           status: nextStatus,
         })
-        .eq("id", booking.id);
+        .eq('id', booking.id);
     }
 
     setLiveCallBooking({
       ...booking,
       call_room_code: roomCode,
+      call_mode: resolvedMode,
       status:
-        booking.status === "Completed"
-          ? "Completed"
-          : isConsultant
-          ? "In Progress"
-          : booking.status,
+        booking.status === 'Completed' ? 'Completed' : isConsultant ? 'In Progress' : booking.status,
     });
     setLiveSeconds(0);
     setFeedback({
-      type: "success",
+      type: 'success',
       text: isConsultant
-        ? `Call accepted! Live audio session (${roomCode}) for "${booking.topic}" is now active.`
-        : `Joined live audio room ${roomCode} for "${booking.topic}".`,
+        ? `Call accepted! Live ${resolvedMode} session (${roomCode}) is on hold & active for "${booking.topic}".`
+        : `Joined live ${resolvedMode} room ${roomCode} for "${booking.topic}".`,
     });
   };
 
-  const handleCompleteSessionAndAutoPay = async (
-    booking: BookingWithSummary
-  ) => {
-    if (!authUser || submitting || booking.status === "Completed") return;
+  const handleCompleteSessionAndAutoPay = async (booking: BookingWithSummary) => {
+    if (!authUser || submitting || booking.status === 'Completed') return;
 
     setSubmitting(true);
     setFeedback(null);
@@ -674,18 +628,13 @@ export default function Dashboard({
         setLiveCallBooking(null);
       }
       setFeedback({
-        type: "success",
-        text: `Session completed! ₦${Number(
-          booking.amount_ngn
-        ).toLocaleString()} automatically paid out.`,
+        type: 'success',
+        text: `Session completed! ₦${Number(booking.amount_ngn).toLocaleString()} automatically paid out.`,
       });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Auto-payment failed on session completion.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Auto-payment failed on session completion.',
       });
     } finally {
       setSubmitting(false);
@@ -697,15 +646,15 @@ export default function Dashboard({
     if (!authUser || submitting) return;
     if (isConsultant) {
       setFeedback({
-        type: "error",
-        text: "Consultants cannot top up wallets—only consultees can add funds.",
+        type: 'error',
+        text: 'Consultants cannot top up wallets—only consultees can add funds.',
       });
       return;
     }
 
     const amt = Number(walletAmountInput);
     if (!amt || amt < 500) {
-      setFeedback({ type: "error", text: "Minimum wallet top-up is ₦500." });
+      setFeedback({ type: 'error', text: 'Minimum wallet top-up is ₦500.' });
       return;
     }
 
@@ -714,20 +663,17 @@ export default function Dashboard({
     try {
       await adjustWalletBalanceRpc({
         amountNgn: amt,
-        direction: "credit",
-        type: "Deposit",
-        description: "Consultee wallet top-up",
+        direction: 'credit',
+        type: 'Deposit',
+        description: 'Consultee wallet top-up',
       });
       await refreshPortalState(authUser.id);
-      setWalletAmountInput("");
-      setFeedback({
-        type: "success",
-        text: `₦${amt.toLocaleString()} added to your wallet.`,
-      });
+      setWalletAmountInput('');
+      setFeedback({ type: 'success', text: `₦${amt.toLocaleString()} added to your wallet.` });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Could not top up wallet.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not top up wallet.',
       });
     } finally {
       setSubmitting(false);
@@ -738,11 +684,11 @@ export default function Dashboard({
     if (!authUser || submitting || isConsultant) return;
     const amt = Number(walletAmountInput);
     if (!amt || amt <= 0) {
-      setFeedback({ type: "error", text: "Enter a valid amount to remove." });
+      setFeedback({ type: 'error', text: 'Enter a valid amount to remove.' });
       return;
     }
     if (amt > walletBalance) {
-      setFeedback({ type: "error", text: "Insufficient wallet balance." });
+      setFeedback({ type: 'error', text: 'Insufficient wallet balance.' });
       return;
     }
 
@@ -751,20 +697,17 @@ export default function Dashboard({
     try {
       await adjustWalletBalanceRpc({
         amountNgn: amt,
-        direction: "debit",
-        type: "Withdrawal",
-        description: "Removed money from wallet",
+        direction: 'debit',
+        type: 'Withdrawal',
+        description: 'Removed money from wallet',
       });
       await refreshPortalState(authUser.id);
-      setWalletAmountInput("");
-      setFeedback({
-        type: "success",
-        text: `₦${amt.toLocaleString()} removed from wallet.`,
-      });
+      setWalletAmountInput('');
+      setFeedback({ type: 'success', text: `₦${amt.toLocaleString()} removed from wallet.` });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Could not remove money.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not remove money.',
       });
     } finally {
       setSubmitting(false);
@@ -776,28 +719,19 @@ export default function Dashboard({
     if (!authUser || submitting) return;
     const amt = Number(withdrawAmountInput);
     if (!/^\d{10}$/.test(accountNumber)) {
-      setFeedback({
-        type: "error",
-        text: "Enter a valid 10-digit NUBAN bank account number.",
-      });
+      setFeedback({ type: 'error', text: 'Enter a valid 10-digit NUBAN bank account number.' });
       return;
     }
     if (!accountName.trim()) {
-      setFeedback({ type: "error", text: "Enter the account holder name." });
+      setFeedback({ type: 'error', text: 'Enter the account holder name.' });
       return;
     }
     if (!amt || amt < 1000) {
-      setFeedback({
-        type: "error",
-        text: "Minimum bank withdrawal is ₦1,000.",
-      });
+      setFeedback({ type: 'error', text: 'Minimum bank withdrawal is ₦1,000.' });
       return;
     }
     if (amt > walletBalance) {
-      setFeedback({
-        type: "error",
-        text: "Withdrawal amount exceeds wallet balance.",
-      });
+      setFeedback({ type: 'error', text: 'Withdrawal amount exceeds wallet balance.' });
       return;
     }
 
@@ -811,15 +745,15 @@ export default function Dashboard({
         amountNgn: amt,
       });
       await refreshPortalState(authUser.id);
-      setWithdrawAmountInput("");
+      setWithdrawAmountInput('');
       setFeedback({
-        type: "success",
+        type: 'success',
         text: `₦${amt.toLocaleString()} withdrawal submitted to ${bankName} (${accountNumber}).`,
       });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Bank withdrawal failed.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Bank withdrawal failed.',
       });
     } finally {
       setSubmitting(false);
@@ -830,7 +764,7 @@ export default function Dashboard({
     e.preventDefault();
     if (!authUser || submitting) return;
     if (!editFullName.trim()) {
-      setFeedback({ type: "error", text: "Full name cannot be empty." });
+      setFeedback({ type: 'error', text: 'Full name cannot be empty.' });
       return;
     }
 
@@ -840,17 +774,11 @@ export default function Dashboard({
     try {
       const trimmedName = editFullName.trim();
       const specialtyValue =
-        editRole === "consultant"
-          ? editSpecialty.trim() || "General Advisory"
-          : null;
+        editRole === 'consultant' ? editSpecialty.trim() || 'General Advisory' : null;
       const formattedPhone = normalizePhoneNumber(phoneInput);
       const isStillSameVerifiedPhone =
-        phoneVerified &&
-        formattedPhone &&
-        formattedPhone === normalizePhoneNumber(profile?.phone || "");
-      const nextVerifiedFlag = formattedPhone
-        ? isStillSameVerifiedPhone
-        : false;
+        phoneVerified && formattedPhone && formattedPhone === normalizePhoneNumber(profile?.phone || '');
+      const nextVerifiedFlag = formattedPhone ? isStillSameVerifiedPhone : false;
 
       const { error: authErr } = await supabase.auth.updateUser({
         data: {
@@ -865,9 +793,9 @@ export default function Dashboard({
       if (authErr) throw new Error(authErr.message);
 
       const { data: existing } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("id", authUser.id)
+        .from('profiles')
+        .select('id')
+        .eq('id', authUser.id)
         .maybeSingle();
 
       const payload = {
@@ -880,14 +808,14 @@ export default function Dashboard({
       };
 
       const query = existing
-        ? supabase.from("profiles").update(payload).eq("id", authUser.id)
-        : supabase.from("profiles").insert({
+        ? supabase.from('profiles').update(payload).eq('id', authUser.id)
+        : supabase.from('profiles').insert({
             id: authUser.id,
             email: displayEmail,
             ...payload,
           });
 
-      const { data: updated, error } = await query.select("*").single();
+      const { data: updated, error } = await query.select('*').single();
       if (error) throw new Error(error.message);
 
       const typedUpdated = updated as UserProfile;
@@ -898,18 +826,13 @@ export default function Dashboard({
       }
       await refreshPortalState(authUser.id);
       setFeedback({
-        type: "success",
-        text: `Profile updated! Signed in as ${trimmedName} (${
-          editRole === "consultant" ? "Consultant" : "Consultee"
-        }).`,
+        type: 'success',
+        text: `Profile updated! Signed in as ${trimmedName} (${editRole === 'consultant' ? 'Consultant' : 'Consultee'}).`,
       });
     } catch (err) {
       setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Failed to save profile changes.",
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Failed to save profile changes.',
       });
     } finally {
       setSubmitting(false);
@@ -923,124 +846,239 @@ export default function Dashboard({
   );
 
   const pendingIncomingRequests = bookings.filter(
-    (b) =>
-      b.status !== "Completed" &&
-      b.status !== "In Progress" &&
-      !acceptedCallIds.includes(b.id)
+    (b) => b.status !== 'Completed' && b.status !== 'In Progress' && !acceptedCallIds.includes(b.id)
   );
   const totalSessions = bookings.length;
   const upcomingSessions = bookings.filter(
-    (b) => b.status === "Upcoming" || b.status === "In Progress"
+    (b) => b.status === 'Upcoming' || b.status === 'In Progress'
   ).length;
-  const completedSessions = bookings.filter(
-    (b) => b.status === "Completed"
-  ).length;
+  const completedSessions = bookings.filter((b) => b.status === 'Completed').length;
 
-  const bgMain = darkMode ? "#0b1020" : "#fdfbf7";
-  const bgCard = darkMode ? "#111827" : "#ffffff";
-  const textPrimary = darkMode ? "#f8fafc" : "#222222";
-  const textMuted = darkMode ? "#94a3b8" : "#57534e";
-  const borderColor = darkMode ? "#1e293b" : "#e5e0d8";
-  const accentBlue = "#2563eb";
+  const bgMain = darkMode ? '#0b1020' : '#fdfbf7';
+  const bgCard = darkMode ? '#111827' : '#ffffff';
+  const textPrimary = darkMode ? '#f8fafc' : '#222222';
+  const textMuted = darkMode ? '#94a3b8' : '#57534e';
+  const borderColor = darkMode ? '#1e293b' : '#e5e0d8';
+  const accentBlue = '#2563eb';
 
   const inputStyle = {
-    width: "100%",
-    padding: "0.65rem 0.8rem",
-    borderRadius: "8px",
+    width: '100%',
+    padding: '0.65rem 0.8rem',
+    borderRadius: '8px',
     border: `1px solid ${borderColor}`,
-    backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
+    backgroundColor: darkMode ? '#0b1020' : '#fdfbf7',
     color: textPrimary,
-    fontSize: "0.9rem",
+    fontSize: '0.9rem',
   };
 
   return (
     <main
       style={{
-        minHeight: "calc(100vh - 58px)",
+        minHeight: 'calc(100vh - 58px)',
         backgroundColor: bgMain,
         color: textPrimary,
-        maxWidth: "1120px",
-        margin: "0 auto",
-        padding: "1.5rem 1.25rem",
-        display: "flex",
-        flexDirection: "column",
-        gap: "1.35rem",
+        maxWidth: '1120px',
+        margin: '0 auto',
+        padding: '1.5rem 1.25rem',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1.35rem',
       }}
     >
       {feedback && (
         <div
           style={{
-            padding: "0.85rem 1rem",
-            borderRadius: "8px",
-            fontSize: "0.9rem",
+            padding: '0.85rem 1rem',
+            borderRadius: '8px',
+            fontSize: '0.9rem',
             fontWeight: 500,
-            backgroundColor:
-              feedback.type === "success" ? "#dcfce7" : "#fee2e2",
-            color: feedback.type === "success" ? "#166534" : "#991b1b",
+            backgroundColor: feedback.type === 'success' ? '#dcfce7' : '#fee2e2',
+            color: feedback.type === 'success' ? '#166534' : '#991b1b',
           }}
         >
           {feedback.text}
         </div>
       )}
 
-      {/* LIVE CALL AUDIO STAGE (Shown only when a live audio call is active) */}
+      {/* PERSISTENT AUDIO & VIDEO CALL STAGE (Stays held until explicitly ended) */}
       {liveCallBooking && (
         <div
           style={{
             backgroundColor: bgCard,
-            border: "2px solid #16a34a",
-            borderRadius: "12px",
-            padding: "1.25rem",
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.8rem",
+            border: '2px solid #16a34a',
+            borderRadius: '12px',
+            padding: '1.25rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.85rem',
           }}
         >
           <audio ref={remoteAudioRef} autoPlay playsInline />
 
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "0.5rem",
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '0.5rem',
             }}
           >
             <div>
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  fontWeight: 700,
-                  color: "#16a34a",
-                }}
-              >
-                ● LIVE AUDIO CALL · ROOM{" "}
-                {liveCallBooking.call_room_code || "LIVE-ROOM"} ·{" "}
-                {formatTimer(liveSeconds)} ·{" "}
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#16a34a' }}>
+                ● LIVE {activeCallMode.toUpperCase()} CALL HELD · ROOM{' '}
+                {liveCallBooking.call_room_code || 'LIVE-ROOM'} · {formatTimer(liveSeconds)} ·{' '}
                 {remoteConnected
-                  ? "Peer Audio Connected"
-                  : callStatus === "connecting"
-                  ? "Connecting Mic & Peer..."
-                  : callStatus.toUpperCase()}
+                  ? 'Peer Connected'
+                  : callStatus === 'connecting'
+                    ? 'Connecting Media & Peer...'
+                    : callStatus.toUpperCase()}
               </span>
-              <h2 style={{ margin: "0.2rem 0 0", fontSize: "1.15rem" }}>
+              <h2 style={{ margin: '0.2rem 0 0', fontSize: '1.15rem' }}>
                 {liveCallBooking.topic} — {liveCallBooking.consultant_name}
               </h2>
             </div>
-            <span style={{ fontWeight: 700 }}>
-              ₦{Number(liveCallBooking.amount_ngn).toLocaleString()} in Escrow
-            </span>
+
+            <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setActiveCallMode('video')}
+                style={{
+                  padding: '0.35rem 0.7rem',
+                  borderRadius: '6px',
+                  border: `1px solid ${borderColor}`,
+                  backgroundColor: activeCallMode === 'video' ? accentBlue : 'transparent',
+                  color: activeCallMode === 'video' ? '#ffffff' : textPrimary,
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Video
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveCallMode('audio')}
+                style={{
+                  padding: '0.35rem 0.7rem',
+                  borderRadius: '6px',
+                  border: `1px solid ${borderColor}`,
+                  backgroundColor: activeCallMode === 'audio' ? accentBlue : 'transparent',
+                  color: activeCallMode === 'audio' ? '#ffffff' : textPrimary,
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Audio
+              </button>
+            </div>
           </div>
+
+          {activeCallMode === 'video' && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: '0.75rem',
+              }}
+            >
+              <div
+                style={{
+                  position: 'relative',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  backgroundColor: '#020617',
+                  minHeight: '195px',
+                  border: `1px solid ${borderColor}`,
+                }}
+              >
+                <video
+                  ref={remoteVideoRef}
+                  autoPlay
+                  playsInline
+                  style={{ width: '100%', height: '195px', objectFit: 'cover', display: 'block' }}
+                />
+                <span
+                  style={{
+                    position: 'absolute',
+                    bottom: '0.45rem',
+                    left: '0.55rem',
+                    fontSize: '0.74rem',
+                    fontWeight: 600,
+                    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+                    color: '#ffffff',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '6px',
+                  }}
+                >
+                  {remoteConnected ? 'Remote Video' : 'Waiting for Remote Video...'}
+                </span>
+              </div>
+
+              <div
+                style={{
+                  position: 'relative',
+                  borderRadius: '10px',
+                  overflow: 'hidden',
+                  backgroundColor: '#0f172a',
+                  minHeight: '195px',
+                  border: `1px solid ${borderColor}`,
+                }}
+              >
+                <video
+                  ref={localVideoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    width: '100%',
+                    height: '195px',
+                    objectFit: 'cover',
+                    display: isCameraOff ? 'none' : 'block',
+                  }}
+                />
+                {isCameraOff && (
+                  <div
+                    style={{
+                      height: '195px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: textMuted,
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    Camera Off
+                  </div>
+                )}
+                <span
+                  style={{
+                    position: 'absolute',
+                    bottom: '0.45rem',
+                    left: '0.55rem',
+                    fontSize: '0.74rem',
+                    fontWeight: 600,
+                    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+                    color: '#ffffff',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '6px',
+                  }}
+                >
+                  You ({isCameraOff ? 'Camera Off' : 'Camera On'})
+                </span>
+              </div>
+            </div>
+          )}
 
           {mediaError && (
             <div
               style={{
-                padding: "0.65rem 0.85rem",
-                borderRadius: "8px",
-                backgroundColor: "#fee2e2",
-                color: "#991b1b",
-                fontSize: "0.85rem",
+                padding: '0.65rem 0.85rem',
+                borderRadius: '8px',
+                backgroundColor: '#fee2e2',
+                color: '#991b1b',
+                fontSize: '0.85rem',
               }}
             >
               {mediaError}
@@ -1049,205 +1087,186 @@ export default function Dashboard({
 
           <div
             style={{
-              padding: "0.85rem 1rem",
-              borderRadius: "8px",
-              backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
+              padding: '0.85rem 1rem',
+              borderRadius: '8px',
+              backgroundColor: darkMode ? '#0b1020' : '#fdfbf7',
               border: `1px solid ${borderColor}`,
             }}
           >
             <div
               style={{
-                fontSize: "0.75rem",
+                fontSize: '0.75rem',
                 fontWeight: 700,
                 color: textMuted,
-                marginBottom: "0.25rem",
+                marginBottom: '0.25rem',
               }}
             >
               COMPLAINT SUMMARY BRIEF
             </div>
-            <p style={{ margin: 0, fontSize: "0.92rem", lineHeight: 1.5 }}>
-              {liveCallBooking.complaint_summary ||
-                "No complaint summary provided."}
+            <p style={{ margin: 0, fontSize: '0.92rem', lineHeight: 1.5 }}>
+              {liveCallBooking.complaint_summary || 'No complaint summary provided.'}
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={toggleMute}
               style={{
-                padding: "0.6rem 1rem",
-                borderRadius: "8px",
+                padding: '0.6rem 1rem',
+                borderRadius: '8px',
                 border: `1px solid ${borderColor}`,
-                backgroundColor: isMuted ? "#fee2e2" : "transparent",
-                color: isMuted ? "#991b1b" : textPrimary,
+                backgroundColor: isMuted ? '#fee2e2' : 'transparent',
+                color: isMuted ? '#991b1b' : textPrimary,
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: 'pointer',
               }}
             >
-              {isMuted ? "Unmute Mic" : "Mute Mic"}
+              {isMuted ? 'Unmute Mic' : 'Mute Mic'}
             </button>
 
-            {liveCallBooking.status !== "Completed" && (
+            {activeCallMode === 'video' && (
+              <button
+                type="button"
+                onClick={toggleCamera}
+                style={{
+                  padding: '0.6rem 1rem',
+                  borderRadius: '8px',
+                  border: `1px solid ${borderColor}`,
+                  backgroundColor: isCameraOff ? '#fef3c7' : 'transparent',
+                  color: isCameraOff ? '#92400e' : textPrimary,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {isCameraOff ? 'Turn Camera On' : 'Turn Camera Off'}
+              </button>
+            )}
+
+            {liveCallBooking.status !== 'Completed' && (
               <button
                 type="button"
                 disabled={submitting}
                 onClick={() => {
-                  endAudioCall();
+                  endCall();
                   handleCompleteSessionAndAutoPay(liveCallBooking);
                 }}
                 style={{
-                  padding: "0.6rem 1rem",
-                  borderRadius: "8px",
-                  border: "none",
-                  backgroundColor: "#16a34a",
-                  color: "#ffffff",
+                  padding: '0.6rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#16a34a',
+                  color: '#ffffff',
                   fontWeight: 600,
-                  cursor: "pointer",
+                  cursor: 'pointer',
                 }}
               >
-                {submitting
-                  ? "Releasing Payment..."
-                  : "End Live Call & Auto-Release Payment"}
+                {submitting ? 'Releasing Payment...' : 'End Call & Auto-Release Payment'}
               </button>
             )}
 
             <button
               type="button"
               onClick={() => {
-                endAudioCall();
+                endCall();
                 setLiveCallBooking(null);
               }}
               style={{
-                padding: "0.6rem 1rem",
-                borderRadius: "8px",
+                padding: '0.6rem 1rem',
+                borderRadius: '8px',
                 border: `1px solid ${borderColor}`,
-                backgroundColor: "transparent",
+                backgroundColor: 'transparent',
                 color: textPrimary,
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: 'pointer',
               }}
             >
-              Leave Audio Call
+              End Call
             </button>
           </div>
         </div>
       )}
 
-      {/* =====================================================================
-          1. DASHBOARD OVERVIEW — Account Overview Only (No Wallet Balance)
-         ===================================================================== */}
-      {activeNav === "overview" && (
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
-        >
+      {/* 1. DASHBOARD OVERVIEW */}
+      {activeNav === 'overview' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.35rem' }}>
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "0.85rem",
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '0.85rem',
               backgroundColor: bgCard,
               border: `1px solid ${borderColor}`,
-              borderRadius: "12px",
-              padding: "1.15rem 1.35rem",
+              borderRadius: '12px',
+              padding: '1.15rem 1.35rem',
             }}
           >
             <div>
               <span
                 style={{
-                  fontSize: "0.72rem",
+                  fontSize: '0.72rem',
                   fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  color: isConsultant ? "#16a34a" : accentBlue,
-                  textTransform: "uppercase",
+                  letterSpacing: '0.05em',
+                  color: isConsultant ? '#16a34a' : accentBlue,
+                  textTransform: 'uppercase',
                 }}
               >
                 {isConsultant
-                  ? "FIND AN EXPERT · CONSULTANT CONSOLE"
-                  : "FIND AN EXPERT · CONSULTEE DESK"}
+                  ? 'FIND AN EXPERT · CONSULTANT CONSOLE'
+                  : 'FIND AN EXPERT · CONSULTEE DESK'}
               </span>
-              <h1 style={{ margin: "0.2rem 0 0", fontSize: "1.4rem" }}>
+              <h1 style={{ margin: '0.2rem 0 0', fontSize: '1.4rem' }}>
                 {isConsultant
-                  ? `Live Call Desk, ${displayName.split(" ")[0]}!`
-                  : `Your Next Breakthrough Starts Now, ${
-                      displayName.split(" ")[0]
-                    }!`}
+                  ? `Live Call Desk, ${displayName.split(' ')[0]}!`
+                  : `Your Next Breakthrough Starts Now, ${displayName.split(' ')[0]}!`}
               </h1>
-              <p
-                style={{
-                  margin: "0.25rem 0 0",
-                  fontSize: "0.86rem",
-                  color: textMuted,
-                }}
-              >
-                {displayEmail} · Role:{" "}
-                <strong>{isConsultant ? "Consultant" : "Consultee"}</strong>
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.86rem', color: textMuted }}>
+                {displayEmail} · Role: <strong>{isConsultant ? 'Consultant' : 'Consultee'}</strong>
                 {activePhone
-                  ? ` · ${activePhone} (${
-                      isPhoneVerified ? "SMS Verified" : "Unverified"
-                    })`
-                  : ""}
+                  ? ` · ${activePhone} (${isPhoneVerified ? 'SMS Verified' : 'Unverified'})`
+                  : ''}
               </p>
             </div>
 
             <button
               type="button"
-              onClick={() =>
-                onChangeNav(isConsultant ? "bookings" : "consultants")
-              }
+              onClick={() => onChangeNav(isConsultant ? 'bookings' : 'consultants')}
               style={{
-                padding: "0.6rem 1rem",
-                borderRadius: "8px",
-                border: "none",
+                padding: '0.6rem 1rem',
+                borderRadius: '8px',
+                border: 'none',
                 backgroundColor: accentBlue,
-                color: "#ffffff",
+                color: '#ffffff',
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: 'pointer',
               }}
             >
-              {isConsultant
-                ? `Incoming Calls (${pendingIncomingRequests.length})`
-                : "Book a Call"}
+              {isConsultant ? `Incoming Calls (${pendingIncomingRequests.length})` : 'Book a Call'}
             </button>
           </div>
 
-          {/* Account Overview Metrics (Wallet balance excluded) */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-              gap: "1rem",
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: '1rem',
             }}
           >
             <div
               style={{
                 backgroundColor: bgCard,
                 border: `1px solid ${borderColor}`,
-                borderRadius: "10px",
-                padding: "1rem",
+                borderRadius: '10px',
+                padding: '1rem',
               }}
             >
-              <div
-                style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  color: textMuted,
-                }}
-              >
-                {isConsultant ? "INCOMING CALLS" : "AVAILABLE EXPERTS"}
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: textMuted }}>
+                {isConsultant ? 'INCOMING CALLS' : 'AVAILABLE EXPERTS'}
               </div>
-              <div
-                style={{
-                  fontSize: "1.55rem",
-                  fontWeight: 700,
-                  marginTop: "0.35rem",
-                }}
-              >
-                {isConsultant
-                  ? pendingIncomingRequests.length
-                  : availableConsultants.length}
+              <div style={{ fontSize: '1.55rem', fontWeight: 700, marginTop: '0.35rem' }}>
+                {isConsultant ? pendingIncomingRequests.length : availableConsultants.length}
               </div>
             </div>
 
@@ -1255,26 +1274,14 @@ export default function Dashboard({
               style={{
                 backgroundColor: bgCard,
                 border: `1px solid ${borderColor}`,
-                borderRadius: "10px",
-                padding: "1rem",
+                borderRadius: '10px',
+                padding: '1rem',
               }}
             >
-              <div
-                style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  color: textMuted,
-                }}
-              >
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: textMuted }}>
                 TOTAL CALLS
               </div>
-              <div
-                style={{
-                  fontSize: "1.55rem",
-                  fontWeight: 700,
-                  marginTop: "0.35rem",
-                }}
-              >
+              <div style={{ fontSize: '1.55rem', fontWeight: 700, marginTop: '0.35rem' }}>
                 {totalSessions}
               </div>
             </div>
@@ -1283,99 +1290,74 @@ export default function Dashboard({
               style={{
                 backgroundColor: bgCard,
                 border: `1px solid ${borderColor}`,
-                borderRadius: "10px",
-                padding: "1rem",
+                borderRadius: '10px',
+                padding: '1rem',
               }}
             >
-              <div
-                style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  color: textMuted,
-                }}
-              >
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, color: textMuted }}>
                 ACTIVE / COMPLETED
               </div>
-              <div
-                style={{
-                  fontSize: "1.55rem",
-                  fontWeight: 700,
-                  marginTop: "0.35rem",
-                }}
-              >
+              <div style={{ fontSize: '1.55rem', fontWeight: 700, marginTop: '0.35rem' }}>
                 {upcomingSessions} / {completedSessions}
               </div>
             </div>
           </div>
 
-          {/* Recent Account Activity */}
           <div
             style={{
               backgroundColor: bgCard,
               border: `1px solid ${borderColor}`,
-              borderRadius: "10px",
-              padding: "1.25rem",
+              borderRadius: '10px',
+              padding: '1.25rem',
             }}
           >
-            <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.1rem" }}>
-              {isConsultant
-                ? "Recent Call Requests"
-                : "Recent Account Activity"}
+            <h2 style={{ margin: '0 0 0.85rem', fontSize: '1.1rem' }}>
+              {isConsultant ? 'Recent Call Requests' : 'Recent Account Activity'}
             </h2>
             {bookings.length === 0 ? (
               <p style={{ color: textMuted, margin: 0 }}>
                 {isConsultant
-                  ? "No incoming call requests right now."
-                  : "No calls booked yet. Open Consultants & Call Queue to book your first session."}
+                  ? 'No incoming call requests right now.'
+                  : 'No calls booked yet. Open Consultants & Call Queue to book your first session.'}
               </p>
             ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.75rem",
-                }}
-              >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 {bookings.slice(0, 5).map((b) => {
-                  const isAccepted =
-                    acceptedCallIds.includes(b.id) ||
-                    b.status === "In Progress";
+                  const isAccepted = acceptedCallIds.includes(b.id) || b.status === 'In Progress';
                   return (
                     <div
                       key={b.id}
                       style={{
-                        padding: "0.85rem 1rem",
-                        borderRadius: "8px",
+                        padding: '0.85rem 1rem',
+                        borderRadius: '8px',
                         border: `1px solid ${borderColor}`,
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        gap: "0.65rem",
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '0.65rem',
                       }}
                     >
                       <div>
-                        <strong>{b.topic}</strong> with{" "}
-                        <strong>{b.consultant_name}</strong> ({b.session_date})
+                        <strong>{b.topic}</strong> with <strong>{b.consultant_name}</strong> (
+                        {b.session_date})
                       </div>
 
                       <span
                         style={{
-                          padding: "0.22rem 0.6rem",
-                          borderRadius: "999px",
-                          fontSize: "0.75rem",
+                          padding: '0.22rem 0.6rem',
+                          borderRadius: '999px',
+                          fontSize: '0.75rem',
                           fontWeight: 600,
-                          backgroundColor:
-                            b.status === "Completed" ? "#dcfce7" : "#dbeafe",
-                          color:
-                            b.status === "Completed" ? "#166534" : "#1e40af",
+                          backgroundColor: b.status === 'Completed' ? '#dcfce7' : '#dbeafe',
+                          color: b.status === 'Completed' ? '#166534' : '#1e40af',
                         }}
                       >
-                        {b.status === "Completed"
-                          ? "Completed"
+                        {b.status === 'Completed'
+                          ? 'Completed'
                           : isAccepted
-                          ? "Live Call Active"
-                          : b.status}
+                            ? 'Live Call Held'
+                            : b.status}
                       </span>
                     </div>
                   );
@@ -1386,33 +1368,21 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* =====================================================================
-          2. CONSULTANTS & CALL QUEUE — Available Consultants & Booking Button Only
-         ===================================================================== */}
-      {activeNav === "consultants" && !isConsultant && (
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
-        >
+      {/* 2. CONSULTANTS & CALL QUEUE */}
+      {activeNav === 'consultants' && !isConsultant && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.35rem' }}>
           <div
             style={{
               backgroundColor: bgCard,
               border: `1px solid ${borderColor}`,
-              borderRadius: "12px",
-              padding: "1.25rem",
+              borderRadius: '12px',
+              padding: '1.25rem',
             }}
           >
-            <h2 style={{ margin: "0 0 0.3rem", fontSize: "1.12rem" }}>
-              Book a Call
-            </h2>
-            <p
-              style={{
-                margin: "0 0 1rem",
-                fontSize: "0.85rem",
-                color: textMuted,
-              }}
-            >
-              Select an available consultant, enter your topic and pre-call
-              complaint summary, and book your session.
+            <h2 style={{ margin: '0 0 0.3rem', fontSize: '1.12rem' }}>Book a Call</h2>
+            <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: textMuted }}>
+              Choose a video or audio call, share your complaint summary, and book with an
+              available consultant.
             </p>
 
             {availableConsultants.length === 0 ? (
@@ -1422,39 +1392,34 @@ export default function Dashboard({
             ) : (
               <form
                 onSubmit={handleBookCall}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.9rem",
-                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}
               >
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                    gap: "0.85rem",
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+                    gap: '0.85rem',
                   }}
                 >
                   <div>
                     <label
                       style={{
-                        display: "block",
-                        fontSize: "0.8rem",
+                        display: 'block',
+                        fontSize: '0.8rem',
                         fontWeight: 600,
-                        marginBottom: "0.3rem",
+                        marginBottom: '0.3rem',
                       }}
                     >
                       Available Consultant
                     </label>
                     <select
-                      value={selectedConsultant?.id || ""}
+                      value={selectedConsultant?.id || ''}
                       onChange={(e) => setSelectedConsultantId(e.target.value)}
                       style={inputStyle}
                     >
                       {availableConsultants.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.full_name} — {c.specialty} (₦
-                          {c.rate_ngn.toLocaleString()})
+                          {c.full_name} — {c.specialty} (₦{c.rate_ngn.toLocaleString()})
                         </option>
                       ))}
                     </select>
@@ -1463,10 +1428,31 @@ export default function Dashboard({
                   <div>
                     <label
                       style={{
-                        display: "block",
-                        fontSize: "0.8rem",
+                        display: 'block',
+                        fontSize: '0.8rem',
                         fontWeight: 600,
-                        marginBottom: "0.3rem",
+                        marginBottom: '0.3rem',
+                      }}
+                    >
+                      Call Option
+                    </label>
+                    <select
+                      value={bookingCallMode}
+                      onChange={(e) => setBookingCallMode(e.target.value as CallMediaMode)}
+                      style={inputStyle}
+                    >
+                      <option value="video">Video Call (Camera + Mic)</option>
+                      <option value="audio">Audio Call (Voice Only)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        marginBottom: '0.3rem',
                       }}
                     >
                       Call Topic
@@ -1483,10 +1469,10 @@ export default function Dashboard({
                   <div>
                     <label
                       style={{
-                        display: "block",
-                        fontSize: "0.8rem",
+                        display: 'block',
+                        fontSize: '0.8rem',
                         fontWeight: 600,
-                        marginBottom: "0.3rem",
+                        marginBottom: '0.3rem',
                       }}
                     >
                       Call Date
@@ -1503,10 +1489,10 @@ export default function Dashboard({
                 <div>
                   <label
                     style={{
-                      display: "block",
-                      fontSize: "0.8rem",
+                      display: 'block',
+                      fontSize: '0.8rem',
                       fontWeight: 600,
-                      marginBottom: "0.3rem",
+                      marginBottom: '0.3rem',
                     }}
                   >
                     Complaint Summary (Before Call Starts)
@@ -1516,7 +1502,7 @@ export default function Dashboard({
                     placeholder="Summarize your complaint, timeline, and what you want resolved on the call..."
                     value={complaintSummary}
                     onChange={(e) => setComplaintSummary(e.target.value)}
-                    style={{ ...inputStyle, resize: "vertical" }}
+                    style={{ ...inputStyle, resize: 'vertical' }}
                   />
                 </div>
 
@@ -1524,42 +1510,38 @@ export default function Dashboard({
                   type="submit"
                   disabled={submitting}
                   style={{
-                    alignSelf: "flex-start",
-                    padding: "0.7rem 1.25rem",
-                    borderRadius: "8px",
-                    border: "none",
+                    alignSelf: 'flex-start',
+                    padding: '0.7rem 1.25rem',
+                    borderRadius: '8px',
+                    border: 'none',
                     backgroundColor: accentBlue,
-                    color: "#ffffff",
+                    color: '#ffffff',
                     fontWeight: 600,
-                    cursor: "pointer",
+                    cursor: 'pointer',
                   }}
                 >
                   {submitting
-                    ? "Booking Call..."
-                    : `Book Call (₦${(
-                        selectedConsultant?.rate_ngn ?? 0
-                      ).toLocaleString()})`}
+                    ? 'Booking Call...'
+                    : `Book ${bookingCallMode === 'video' ? 'Video' : 'Audio'} Call (₦${(selectedConsultant?.rate_ngn ?? 0).toLocaleString()})`}
                 </button>
               </form>
             )}
           </div>
 
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}
-          >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <input
               type="text"
               placeholder="Search available consultants..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ ...inputStyle, maxWidth: "420px" }}
+              style={{ ...inputStyle, maxWidth: '420px' }}
             />
 
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                gap: "1rem",
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                gap: '1rem',
               }}
             >
               {filteredConsultants.map((c) => (
@@ -1567,49 +1549,39 @@ export default function Dashboard({
                   key={c.id}
                   style={{
                     backgroundColor: bgCard,
-                    border: `1px solid ${
-                      selectedConsultant?.id === c.id ? accentBlue : borderColor
-                    }`,
-                    borderRadius: "10px",
-                    padding: "1.15rem",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    gap: "0.8rem",
+                    border: `1px solid ${selectedConsultant?.id === c.id ? accentBlue : borderColor}`,
+                    borderRadius: '10px',
+                    padding: '1.15rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '0.8rem',
                   }}
                 >
                   <div>
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: "0.5rem",
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '0.5rem',
                       }}
                     >
-                      <strong style={{ fontSize: "1.02rem" }}>
-                        {c.full_name}
-                      </strong>
+                      <strong style={{ fontSize: '1.02rem' }}>{c.full_name}</strong>
                       <span
                         style={{
-                          fontSize: "0.72rem",
+                          fontSize: '0.72rem',
                           fontWeight: 700,
-                          padding: "0.18rem 0.5rem",
-                          borderRadius: "999px",
-                          backgroundColor: "#dcfce7",
-                          color: "#166534",
+                          padding: '0.18rem 0.5rem',
+                          borderRadius: '999px',
+                          backgroundColor: '#dcfce7',
+                          color: '#166534',
                         }}
                       >
                         Available
                       </span>
                     </div>
-                    <p
-                      style={{
-                        margin: "0.35rem 0",
-                        fontSize: "0.85rem",
-                        color: textMuted,
-                      }}
-                    >
+                    <p style={{ margin: '0.35rem 0', fontSize: '0.85rem', color: textMuted }}>
                       {c.specialty}
                     </p>
                     <div style={{ fontWeight: 700, color: accentBlue }}>
@@ -1621,21 +1593,16 @@ export default function Dashboard({
                     type="button"
                     onClick={() => setSelectedConsultantId(c.id)}
                     style={{
-                      padding: "0.55rem 0.85rem",
-                      borderRadius: "8px",
-                      border: "none",
-                      backgroundColor:
-                        selectedConsultant?.id === c.id
-                          ? "#16a34a"
-                          : accentBlue,
-                      color: "#ffffff",
+                      padding: '0.55rem 0.85rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: selectedConsultant?.id === c.id ? '#16a34a' : accentBlue,
+                      color: '#ffffff',
                       fontWeight: 600,
-                      cursor: "pointer",
+                      cursor: 'pointer',
                     }}
                   >
-                    {selectedConsultant?.id === c.id
-                      ? "Selected"
-                      : "Select Consultant"}
+                    {selectedConsultant?.id === c.id ? 'Selected' : 'Select Consultant'}
                   </button>
                 </div>
               ))}
@@ -1644,101 +1611,98 @@ export default function Dashboard({
         </div>
       )}
 
-      {activeNav === "consultants" && isConsultant && (
+      {activeNav === 'consultants' && isConsultant && (
         <div
           style={{
             backgroundColor: bgCard,
             border: `1px solid ${borderColor}`,
-            borderRadius: "12px",
-            padding: "1.25rem",
+            borderRadius: '12px',
+            padding: '1.25rem',
           }}
         >
-          <h2 style={{ margin: "0 0 0.35rem", fontSize: "1.12rem" }}>
-            Incoming Call Queue
-          </h2>
-          <p
-            style={{
-              margin: "0 0 1rem",
-              fontSize: "0.85rem",
-              color: textMuted,
-            }}
-          >
-            Review incoming call requests and accept to start the live audio
-            call.
+          <h2 style={{ margin: '0 0 0.35rem', fontSize: '1.12rem' }}>Incoming Call Queue</h2>
+          <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: textMuted }}>
+            Accept a call via Video or Audio and keep the session held until you finish.
           </p>
 
           {pendingIncomingRequests.length === 0 ? (
-            <p style={{ color: textMuted, margin: 0 }}>
-              No pending calls waiting for acceptance.
-            </p>
+            <p style={{ color: textMuted, margin: 0 }}>No pending calls waiting for acceptance.</p>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.85rem",
-              }}
-            >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               {pendingIncomingRequests.map((b) => (
                 <div
                   key={b.id}
                   style={{
-                    padding: "1rem",
-                    borderRadius: "10px",
+                    padding: '1rem',
+                    borderRadius: '10px',
                     border: `1px solid ${borderColor}`,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "0.6rem",
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.6rem',
                   }}
                 >
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: "0.6rem",
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '0.6rem',
                     }}
                   >
                     <div>
-                      <strong style={{ fontSize: "1rem" }}>{b.topic}</strong>
-                      <div style={{ fontSize: "0.82rem", color: textMuted }}>
-                        Date: {b.session_date} · Fee: ₦
-                        {Number(b.amount_ngn).toLocaleString()}
+                      <strong style={{ fontSize: '1rem' }}>{b.topic}</strong>
+                      <div style={{ fontSize: '0.82rem', color: textMuted }}>
+                        Date: {b.session_date} · Fee: ₦{Number(b.amount_ngn).toLocaleString()}
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleAcceptAndStartLiveCall(b)}
-                      style={{
-                        padding: "0.5rem 0.95rem",
-                        borderRadius: "8px",
-                        border: "none",
-                        backgroundColor: "#16a34a",
-                        color: "#ffffff",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Accept &amp; Start Call
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptAndStartLiveCall(b, 'video')}
+                        style={{
+                          padding: '0.5rem 0.9rem',
+                          borderRadius: '8px',
+                          border: 'none',
+                          backgroundColor: '#16a34a',
+                          color: '#ffffff',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Accept Video Call
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptAndStartLiveCall(b, 'audio')}
+                        style={{
+                          padding: '0.5rem 0.9rem',
+                          borderRadius: '8px',
+                          border: `1px solid ${accentBlue}`,
+                          backgroundColor: 'transparent',
+                          color: accentBlue,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Accept Audio Call
+                      </button>
+                    </div>
                   </div>
 
                   <div
                     style={{
-                      padding: "0.65rem 0.8rem",
-                      borderRadius: "8px",
-                      backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
-                      fontSize: "0.85rem",
+                      padding: '0.65rem 0.8rem',
+                      borderRadius: '8px',
+                      backgroundColor: darkMode ? '#0b1020' : '#fdfbf7',
+                      fontSize: '0.85rem',
                     }}
                   >
-                    <strong style={{ color: textMuted, fontSize: "0.76rem" }}>
-                      COMPLAINT SUMMARY:{" "}
+                    <strong style={{ color: textMuted, fontSize: '0.76rem' }}>
+                      COMPLAINT SUMMARY:{' '}
                     </strong>
-                    <span>
-                      {b.complaint_summary || "Provided prior to call."}
-                    </span>
+                    <span>{b.complaint_summary || 'Provided prior to call.'}</span>
                   </div>
                 </div>
               ))}
@@ -1747,139 +1711,135 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* =====================================================================
-          3. CALLS & ESCROW — Previous/Scheduled Calls & Payments Made Only
-         ===================================================================== */}
-      {activeNav === "bookings" && (
+      {/* 3. CALLS & ESCROW */}
+      {activeNav === 'bookings' && (
         <div
           style={{
             backgroundColor: bgCard,
             border: `1px solid ${borderColor}`,
-            borderRadius: "12px",
-            padding: "1.25rem",
+            borderRadius: '12px',
+            padding: '1.25rem',
           }}
         >
-          <h2 style={{ margin: "0 0 1rem", fontSize: "1.12rem" }}>
-            Calls &amp; Escrow Payments
-          </h2>
+          <h2 style={{ margin: '0 0 1rem', fontSize: '1.12rem' }}>Calls &amp; Escrow Payments</h2>
           {bookings.length === 0 ? (
-            <p style={{ color: textMuted, margin: 0 }}>
-              No calls or escrow payments yet.
-            </p>
+            <p style={{ color: textMuted, margin: 0 }}>No calls or escrow payments yet.</p>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.85rem",
-              }}
-            >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               {bookings.map((b) => {
-                const isAccepted =
-                  acceptedCallIds.includes(b.id) || b.status === "In Progress";
+                const isAccepted = acceptedCallIds.includes(b.id) || b.status === 'In Progress';
                 return (
                   <div
                     key={b.id}
                     style={{
-                      padding: "1rem",
-                      borderRadius: "10px",
+                      padding: '1rem',
+                      borderRadius: '10px',
                       border: `1px solid ${borderColor}`,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "0.6rem",
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.6rem',
                     }}
                   >
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        gap: "0.6rem",
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '0.6rem',
                       }}
                     >
                       <div>
-                        <strong style={{ fontSize: "1rem" }}>{b.topic}</strong>
-                        <div style={{ fontSize: "0.82rem", color: textMuted }}>
+                        <strong style={{ fontSize: '1rem' }}>{b.topic}</strong>
+                        <div style={{ fontSize: '0.82rem', color: textMuted }}>
                           {b.consultant_name} · {b.session_date} · Payment: ₦
                           {Number(b.amount_ngn).toLocaleString()}
-                          {b.call_room_code
-                            ? ` · Room: ${b.call_room_code}`
-                            : ""}
+                          {b.call_room_code ? ` · Room: ${b.call_room_code}` : ''}
                         </div>
                       </div>
 
                       <div
                         style={{
-                          display: "flex",
-                          gap: "0.55rem",
-                          flexWrap: "wrap",
-                          alignItems: "center",
+                          display: 'flex',
+                          gap: '0.5rem',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
                         }}
                       >
                         <span
                           style={{
-                            padding: "0.24rem 0.65rem",
-                            borderRadius: "999px",
-                            fontSize: "0.76rem",
+                            padding: '0.24rem 0.65rem',
+                            borderRadius: '999px',
+                            fontSize: '0.76rem',
                             fontWeight: 600,
-                            backgroundColor:
-                              b.status === "Completed" ? "#dcfce7" : "#dbeafe",
-                            color:
-                              b.status === "Completed" ? "#166534" : "#1e40af",
+                            backgroundColor: b.status === 'Completed' ? '#dcfce7' : '#dbeafe',
+                            color: b.status === 'Completed' ? '#166534' : '#1e40af',
                           }}
                         >
-                          {b.status === "Completed"
-                            ? "Completed · Paid Out"
+                          {b.status === 'Completed'
+                            ? 'Completed · Paid Out'
                             : isAccepted
-                            ? "Live Call Active"
-                            : "Paid in Escrow"}
+                              ? 'Live Call Held'
+                              : 'Paid in Escrow'}
                         </span>
 
-                        {b.status !== "Completed" && (
-                          <button
-                            type="button"
-                            onClick={() => handleAcceptAndStartLiveCall(b)}
-                            style={{
-                              padding: "0.42rem 0.85rem",
-                              borderRadius: "7px",
-                              border: `1px solid ${accentBlue}`,
-                              backgroundColor: isAccepted
-                                ? accentBlue
-                                : "transparent",
-                              color: isAccepted ? "#ffffff" : accentBlue,
-                              fontSize: "0.8rem",
-                              fontWeight: 600,
-                              cursor: "pointer",
-                            }}
-                          >
-                            {isConsultant
-                              ? isAccepted
-                                ? "Join Live Audio"
-                                : "Accept & Start Call"
-                              : "Join Audio Call"}
-                          </button>
+                        {b.status !== 'Completed' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleAcceptAndStartLiveCall(b, 'video')}
+                              style={{
+                                padding: '0.42rem 0.78rem',
+                                borderRadius: '7px',
+                                border: 'none',
+                                backgroundColor: accentBlue,
+                                color: '#ffffff',
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Video Call
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAcceptAndStartLiveCall(b, 'audio')}
+                              style={{
+                                padding: '0.42rem 0.78rem',
+                                borderRadius: '7px',
+                                border: `1px solid ${accentBlue}`,
+                                backgroundColor: 'transparent',
+                                color: accentBlue,
+                                fontSize: '0.8rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Audio Call
+                            </button>
+                          </>
                         )}
 
-                        {b.status !== "Completed" && (
+                        {b.status !== 'Completed' && (
                           <button
                             type="button"
                             disabled={submitting}
                             onClick={() => {
                               if (liveCallBooking?.id === b.id) {
-                                endAudioCall();
+                                endCall();
                               }
                               handleCompleteSessionAndAutoPay(b);
                             }}
                             style={{
-                              padding: "0.42rem 0.85rem",
-                              borderRadius: "7px",
-                              border: "none",
-                              backgroundColor: "#16a34a",
-                              color: "#ffffff",
-                              fontSize: "0.8rem",
+                              padding: '0.42rem 0.85rem',
+                              borderRadius: '7px',
+                              border: 'none',
+                              backgroundColor: '#16a34a',
+                              color: '#ffffff',
+                              fontSize: '0.8rem',
                               fontWeight: 600,
-                              cursor: "pointer",
+                              cursor: 'pointer',
                             }}
                           >
                             Complete Session (Auto-Pay)
@@ -1890,18 +1850,16 @@ export default function Dashboard({
 
                     <div
                       style={{
-                        padding: "0.65rem 0.8rem",
-                        borderRadius: "8px",
-                        backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
-                        fontSize: "0.85rem",
+                        padding: '0.65rem 0.8rem',
+                        borderRadius: '8px',
+                        backgroundColor: darkMode ? '#0b1020' : '#fdfbf7',
+                        fontSize: '0.85rem',
                       }}
                     >
-                      <strong style={{ color: textMuted, fontSize: "0.76rem" }}>
-                        COMPLAINT SUMMARY:{" "}
+                      <strong style={{ color: textMuted, fontSize: '0.76rem' }}>
+                        COMPLAINT SUMMARY:{' '}
                       </strong>
-                      <span>
-                        {b.complaint_summary || "Shared prior to call."}
-                      </span>
+                      <span>{b.complaint_summary || 'Shared prior to call.'}</span>
                     </div>
                   </div>
                 );
@@ -1911,62 +1869,40 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* =====================================================================
-          4. WALLET & PAYOUTS — Wallet Balance, Top Up, Withdrawals & Histories Only
-         ===================================================================== */}
-      {activeNav === "wallet" && (
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: "1.35rem" }}
-        >
+      {/* 4. WALLET & PAYOUTS */}
+      {activeNav === 'wallet' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.35rem' }}>
           <div
             style={{
               backgroundColor: bgCard,
               border: `1px solid ${borderColor}`,
-              borderRadius: "12px",
-              padding: "1.35rem",
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: "1.5rem",
+              borderRadius: '12px',
+              padding: '1.35rem',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+              gap: '1.5rem',
             }}
           >
             <div>
-              <div
-                style={{
-                  fontSize: "0.76rem",
-                  fontWeight: 700,
-                  color: textMuted,
-                }}
-              >
-                {isConsultant ? "CONSULTANT PAYOUT BALANCE" : "WALLET BALANCE"}
+              <div style={{ fontSize: '0.76rem', fontWeight: 700, color: textMuted }}>
+                {isConsultant ? 'CONSULTANT PAYOUT BALANCE' : 'WALLET BALANCE'}
               </div>
-              <div
-                style={{
-                  fontSize: "2rem",
-                  fontWeight: 800,
-                  margin: "0.3rem 0",
-                }}
-              >
+              <div style={{ fontSize: '2rem', fontWeight: 800, margin: '0.3rem 0' }}>
                 ₦{walletBalance.toLocaleString()}
               </div>
-              <p style={{ margin: 0, fontSize: "0.84rem", color: textMuted }}>
+              <p style={{ margin: 0, fontSize: '0.84rem', color: textMuted }}>
                 {isConsultant
-                  ? "Session payouts credit here automatically when sessions complete. Withdraw to your local bank account below."
-                  : "Top up your wallet to book calls or withdraw funds to your local bank account."}
+                  ? 'Session payouts credit here automatically when sessions complete. Withdraw to your local bank account below.'
+                  : 'Top up your wallet to book calls or withdraw funds to your local bank account.'}
               </p>
             </div>
 
             {!isConsultant ? (
               <form
                 onSubmit={handleDeposit}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.7rem",
-                }}
+                style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}
               >
-                <label style={{ fontSize: "0.82rem", fontWeight: 600 }}>
-                  Top Up Amount (₦ NGN)
-                </label>
+                <label style={{ fontSize: '0.82rem', fontWeight: 600 }}>Top Up Amount (₦ NGN)</label>
                 <input
                   type="number"
                   min={500}
@@ -1976,19 +1912,19 @@ export default function Dashboard({
                   onChange={(e) => setWalletAmountInput(e.target.value)}
                   style={inputStyle}
                 />
-                <div style={{ display: "flex", gap: "0.65rem" }}>
+                <div style={{ display: 'flex', gap: '0.65rem' }}>
                   <button
                     type="submit"
                     disabled={submitting}
                     style={{
                       flex: 1,
-                      padding: "0.65rem 1rem",
-                      borderRadius: "8px",
-                      border: "none",
+                      padding: '0.65rem 1rem',
+                      borderRadius: '8px',
+                      border: 'none',
                       backgroundColor: accentBlue,
-                      color: "#ffffff",
+                      color: '#ffffff',
                       fontWeight: 600,
-                      cursor: "pointer",
+                      cursor: 'pointer',
                     }}
                   >
                     + Top Up Wallet
@@ -1999,13 +1935,13 @@ export default function Dashboard({
                     onClick={handleRemoveMoney}
                     style={{
                       flex: 1,
-                      padding: "0.65rem 1rem",
-                      borderRadius: "8px",
-                      border: "1px solid #ef4444",
-                      backgroundColor: "transparent",
-                      color: "#ef4444",
+                      padding: '0.65rem 1rem',
+                      borderRadius: '8px',
+                      border: '1px solid #ef4444',
+                      backgroundColor: 'transparent',
+                      color: '#ef4444',
                       fontWeight: 600,
-                      cursor: "pointer",
+                      cursor: 'pointer',
                     }}
                   >
                     - Remove Money
@@ -2015,18 +1951,18 @@ export default function Dashboard({
             ) : (
               <div
                 style={{
-                  padding: "0.9rem 1rem",
-                  borderRadius: "8px",
-                  backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
+                  padding: '0.9rem 1rem',
+                  borderRadius: '8px',
+                  backgroundColor: darkMode ? '#0b1020' : '#fdfbf7',
                   border: `1px solid ${borderColor}`,
-                  fontSize: "0.84rem",
+                  fontSize: '0.84rem',
                   color: textMuted,
-                  alignSelf: "center",
+                  alignSelf: 'center',
                 }}
               >
-                Wallet top-up is disabled for consultants. Use the{" "}
-                <strong>Withdraw to Local Bank Account</strong> form below to
-                cash out your earnings.
+                Wallet top-up is disabled for consultants. Use the{' '}
+                <strong>Withdraw to Local Bank Account</strong> form below to cash out your
+                earnings.
               </div>
             )}
           </div>
@@ -2035,30 +1971,24 @@ export default function Dashboard({
             style={{
               backgroundColor: bgCard,
               border: `1px solid ${borderColor}`,
-              borderRadius: "12px",
-              padding: "1.35rem",
+              borderRadius: '12px',
+              padding: '1.35rem',
             }}
           >
-            <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.08rem" }}>
+            <h2 style={{ margin: '0 0 0.85rem', fontSize: '1.08rem' }}>
               Withdraw to Local Bank Account
             </h2>
             <form
               onSubmit={handleBankWithdraw}
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                gap: "0.8rem",
-                alignItems: "end",
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+                gap: '0.8rem',
+                alignItems: 'end',
               }}
             >
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: "0.25rem",
-                  }}
-                >
+                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                   Bank
                 </label>
                 <select
@@ -2074,13 +2004,7 @@ export default function Dashboard({
                 </select>
               </div>
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: "0.25rem",
-                  }}
-                >
+                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                   10-Digit Account No.
                 </label>
                 <input
@@ -2088,20 +2012,12 @@ export default function Dashboard({
                   maxLength={10}
                   placeholder="0123456789"
                   value={accountNumber}
-                  onChange={(e) =>
-                    setAccountNumber(e.target.value.replace(/\D/g, ""))
-                  }
+                  onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
                   style={inputStyle}
                 />
               </div>
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: "0.25rem",
-                  }}
-                >
+                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                   Account Name
                 </label>
                 <input
@@ -2113,13 +2029,7 @@ export default function Dashboard({
                 />
               </div>
               <div>
-                <label
-                  style={{
-                    display: "block",
-                    fontSize: "0.8rem",
-                    marginBottom: "0.25rem",
-                  }}
-                >
+                <label style={{ display: 'block', fontSize: '0.8rem', marginBottom: '0.25rem' }}>
                   Amount (₦ NGN)
                 </label>
                 <input
@@ -2136,13 +2046,13 @@ export default function Dashboard({
                 type="submit"
                 disabled={submitting}
                 style={{
-                  padding: "0.68rem 1rem",
-                  borderRadius: "8px",
-                  border: "none",
+                  padding: '0.68rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
                   backgroundColor: accentBlue,
-                  color: "#ffffff",
+                  color: '#ffffff',
                   fontWeight: 600,
-                  cursor: "pointer",
+                  cursor: 'pointer',
                 }}
               >
                 Withdraw
@@ -2150,59 +2060,46 @@ export default function Dashboard({
             </form>
           </div>
 
-          {/* Wallet Transaction History */}
           <div
             style={{
               backgroundColor: bgCard,
               border: `1px solid ${borderColor}`,
-              borderRadius: "12px",
-              padding: "1.25rem",
+              borderRadius: '12px',
+              padding: '1.25rem',
             }}
           >
-            <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.08rem" }}>
+            <h2 style={{ margin: '0 0 0.85rem', fontSize: '1.08rem' }}>
               Wallet Transaction History
             </h2>
             {transactions.length === 0 ? (
-              <p style={{ color: textMuted, margin: 0 }}>
-                No wallet transactions recorded yet.
-              </p>
+              <p style={{ color: textMuted, margin: 0 }}>No wallet transactions recorded yet.</p>
             ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.6rem",
-                }}
-              >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {transactions.map((tx) => (
                   <div
                     key={tx.id}
                     style={{
-                      padding: "0.72rem 0.9rem",
-                      borderRadius: "8px",
+                      padding: '0.72rem 0.9rem',
+                      borderRadius: '8px',
                       border: `1px solid ${borderColor}`,
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>
-                        {tx.description}
-                      </div>
-                      <div style={{ fontSize: "0.76rem", color: textMuted }}>
-                        {tx.type} ·{" "}
-                        {new Date(tx.created_at).toLocaleDateString()}
+                      <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{tx.description}</div>
+                      <div style={{ fontSize: '0.76rem', color: textMuted }}>
+                        {tx.type} · {new Date(tx.created_at).toLocaleDateString()}
                       </div>
                     </div>
                     <div
                       style={{
                         fontWeight: 700,
-                        color:
-                          tx.direction === "credit" ? "#16a34a" : "#ef4444",
+                        color: tx.direction === 'credit' ? '#16a34a' : '#ef4444',
                       }}
                     >
-                      {tx.direction === "credit" ? "+" : "-"}₦
+                      {tx.direction === 'credit' ? '+' : '-'}₦
                       {Number(tx.amount_ngn).toLocaleString()}
                     </div>
                   </div>
@@ -2211,54 +2108,44 @@ export default function Dashboard({
             )}
           </div>
 
-          {/* Bank Withdrawal History */}
           <div
             style={{
               backgroundColor: bgCard,
               border: `1px solid ${borderColor}`,
-              borderRadius: "12px",
-              padding: "1.25rem",
+              borderRadius: '12px',
+              padding: '1.25rem',
             }}
           >
-            <h2 style={{ margin: "0 0 0.85rem", fontSize: "1.08rem" }}>
+            <h2 style={{ margin: '0 0 0.85rem', fontSize: '1.08rem' }}>
               Bank Withdrawal History
             </h2>
             {withdrawals.length === 0 ? (
-              <p style={{ color: textMuted, margin: 0 }}>
-                No bank withdrawals recorded yet.
-              </p>
+              <p style={{ color: textMuted, margin: 0 }}>No bank withdrawals recorded yet.</p>
             ) : (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.6rem",
-                }}
-              >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 {withdrawals.map((wd) => (
                   <div
                     key={wd.id}
                     style={{
-                      padding: "0.72rem 0.9rem",
-                      borderRadius: "8px",
+                      padding: '0.72rem 0.9rem',
+                      borderRadius: '8px',
                       border: `1px solid ${borderColor}`,
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: "0.5rem",
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '0.5rem',
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: "0.88rem" }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>
                         {wd.bank_name} · {wd.account_number} ({wd.account_name})
                       </div>
-                      <div style={{ fontSize: "0.76rem", color: textMuted }}>
-                        Status: {wd.status} ·{" "}
-                        {new Date(wd.created_at).toLocaleDateString()}
+                      <div style={{ fontSize: '0.76rem', color: textMuted }}>
+                        Status: {wd.status} · {new Date(wd.created_at).toLocaleDateString()}
                       </div>
                     </div>
-                    <div style={{ fontWeight: 700, color: "#ef4444" }}>
+                    <div style={{ fontWeight: 700, color: '#ef4444' }}>
                       -₦{Number(wd.amount_ngn).toLocaleString()}
                     </div>
                   </div>
@@ -2269,49 +2156,47 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* =====================================================================
-          5. PROFILE SETTINGS — Profile, Edit Profile, Photo & SMS Verification Only
-         ===================================================================== */}
-      {activeNav === "profile" && (
+      {/* 5. PROFILE SETTINGS */}
+      {activeNav === 'profile' && (
         <div
           style={{
             backgroundColor: bgCard,
             border: `1px solid ${borderColor}`,
-            borderRadius: "12px",
-            padding: "1.35rem",
-            display: "flex",
-            flexDirection: "column",
-            gap: "1.25rem",
+            borderRadius: '12px',
+            padding: '1.35rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.25rem',
           }}
         >
-          <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Profile Settings</h2>
+          <h2 style={{ margin: 0, fontSize: '1.15rem' }}>Profile Settings</h2>
 
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "1rem",
-              flexWrap: "wrap",
-              padding: "0.9rem 1rem",
-              borderRadius: "10px",
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
+              flexWrap: 'wrap',
+              padding: '0.9rem 1rem',
+              borderRadius: '10px',
               border: `1px solid ${borderColor}`,
-              backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
+              backgroundColor: darkMode ? '#0b1020' : '#fdfbf7',
             }}
           >
             <div
               style={{
-                width: "56px",
-                height: "56px",
-                borderRadius: "9999px",
-                overflow: "hidden",
+                width: '56px',
+                height: '56px',
+                borderRadius: '9999px',
+                overflow: 'hidden',
                 border: `2px solid ${accentBlue}`,
                 backgroundColor: accentBlue,
-                color: "#ffffff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 fontWeight: 700,
-                fontSize: "1.1rem",
+                fontSize: '1.1rem',
                 flexShrink: 0,
               }}
             >
@@ -2319,41 +2204,29 @@ export default function Dashboard({
                 <img
                   src={activeAvatar}
                   alt={displayName}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    display: "block",
-                  }}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 />
               ) : (
                 <span>{initials}</span>
               )}
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.35rem",
-              }}
-            >
-              <strong style={{ fontSize: "0.95rem" }}>{displayName}</strong>
-              <span style={{ fontSize: "0.82rem", color: textMuted }}>
-                {displayEmail} · Role:{" "}
-                <strong>{isConsultant ? "Consultant" : "Consultee"}</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <strong style={{ fontSize: '0.95rem' }}>{displayName}</strong>
+              <span style={{ fontSize: '0.82rem', color: textMuted }}>
+                {displayEmail} · Role: <strong>{isConsultant ? 'Consultant' : 'Consultee'}</strong>
               </span>
               <label
                 style={{
-                  alignSelf: "flex-start",
-                  padding: "0.45rem 0.85rem",
-                  borderRadius: "8px",
+                  alignSelf: 'flex-start',
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '8px',
                   backgroundColor: accentBlue,
-                  color: "#ffffff",
-                  fontSize: "0.82rem",
+                  color: '#ffffff',
+                  fontSize: '0.82rem',
                   fontWeight: 600,
-                  cursor: "pointer",
-                  marginTop: "0.2rem",
+                  cursor: 'pointer',
+                  marginTop: '0.2rem',
                 }}
               >
                 Choose Photo
@@ -2361,7 +2234,7 @@ export default function Dashboard({
                   type="file"
                   accept="image/*"
                   onChange={handlePhotoSelect}
-                  style={{ display: "none" }}
+                  style={{ display: 'none' }}
                 />
               </label>
             </div>
@@ -2370,19 +2243,19 @@ export default function Dashboard({
           <form
             onSubmit={handleSaveProfile}
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-              gap: "0.9rem",
-              alignItems: "end",
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+              gap: '0.9rem',
+              alignItems: 'end',
             }}
           >
             <div>
               <label
                 style={{
-                  display: "block",
-                  fontSize: "0.8rem",
+                  display: 'block',
+                  fontSize: '0.8rem',
                   fontWeight: 600,
-                  marginBottom: "0.3rem",
+                  marginBottom: '0.3rem',
                 }}
               >
                 Full Name
@@ -2398,19 +2271,17 @@ export default function Dashboard({
             <div>
               <label
                 style={{
-                  display: "block",
-                  fontSize: "0.8rem",
+                  display: 'block',
+                  fontSize: '0.8rem',
                   fontWeight: 600,
-                  marginBottom: "0.3rem",
+                  marginBottom: '0.3rem',
                 }}
               >
                 Role
               </label>
               <select
                 value={editRole}
-                onChange={(e) =>
-                  setEditRole(e.target.value as "client" | "consultant")
-                }
+                onChange={(e) => setEditRole(e.target.value as 'client' | 'consultant')}
                 style={inputStyle}
               >
                 <option value="client">Consultee (Client)</option>
@@ -2421,10 +2292,10 @@ export default function Dashboard({
             <div>
               <label
                 style={{
-                  display: "block",
-                  fontSize: "0.8rem",
+                  display: 'block',
+                  fontSize: '0.8rem',
                   fontWeight: 600,
-                  marginBottom: "0.3rem",
+                  marginBottom: '0.3rem',
                 }}
               >
                 Specialty
@@ -2442,62 +2313,60 @@ export default function Dashboard({
               type="submit"
               disabled={submitting}
               style={{
-                padding: "0.68rem 1.1rem",
-                borderRadius: "8px",
-                border: "none",
+                padding: '0.68rem 1.1rem',
+                borderRadius: '8px',
+                border: 'none',
                 backgroundColor: accentBlue,
-                color: "#ffffff",
+                color: '#ffffff',
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: 'pointer',
               }}
             >
-              {submitting ? "Saving..." : "Save Changes"}
+              {submitting ? 'Saving...' : 'Save Changes'}
             </button>
           </form>
 
           <div
             style={{
-              padding: "1rem",
-              borderRadius: "10px",
+              padding: '1rem',
+              borderRadius: '10px',
               border: `1px solid ${borderColor}`,
-              backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
+              backgroundColor: darkMode ? '#0b1020' : '#fdfbf7',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem',
             }}
           >
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                flexWrap: "wrap",
-                gap: "0.5rem",
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '0.5rem',
               }}
             >
-              <strong style={{ fontSize: "0.92rem" }}>
-                Phone Number &amp; Text Verification
-              </strong>
+              <strong style={{ fontSize: '0.92rem' }}>Phone Number &amp; Text Verification</strong>
               <span
                 style={{
-                  padding: "0.2rem 0.6rem",
-                  borderRadius: "999px",
-                  fontSize: "0.74rem",
+                  padding: '0.2rem 0.6rem',
+                  borderRadius: '999px',
+                  fontSize: '0.74rem',
                   fontWeight: 700,
-                  backgroundColor: isPhoneVerified ? "#dcfce7" : "#fef3c7",
-                  color: isPhoneVerified ? "#166534" : "#92400e",
+                  backgroundColor: isPhoneVerified ? '#dcfce7' : '#fef3c7',
+                  color: isPhoneVerified ? '#166534' : '#92400e',
                 }}
               >
-                {isPhoneVerified ? "Verified via Text" : "Not Verified"}
+                {isPhoneVerified ? 'Verified via Text' : 'Not Verified'}
               </span>
             </div>
 
             <div
               style={{
-                display: "flex",
-                gap: "0.65rem",
-                flexWrap: "wrap",
-                alignItems: "center",
+                display: 'flex',
+                gap: '0.65rem',
+                flexWrap: 'wrap',
+                alignItems: 'center',
               }}
             >
               <input
@@ -2508,72 +2377,57 @@ export default function Dashboard({
                   setPhoneInput(e.target.value);
                   setPhoneVerified(false);
                 }}
-                style={{ ...inputStyle, maxWidth: "300px" }}
+                style={{ ...inputStyle, maxWidth: '300px' }}
               />
               <button
                 type="button"
                 disabled={sendingSms}
                 onClick={handleSendSmsVerification}
                 style={{
-                  padding: "0.65rem 1rem",
-                  borderRadius: "8px",
-                  border: "none",
+                  padding: '0.65rem 1rem',
+                  borderRadius: '8px',
+                  border: 'none',
                   backgroundColor: accentBlue,
-                  color: "#ffffff",
+                  color: '#ffffff',
                   fontWeight: 600,
-                  cursor: "pointer",
+                  cursor: 'pointer',
                 }}
               >
-                {sendingSms ? "Sending Text..." : "Send Verification Text"}
+                {sendingSms ? 'Sending Text...' : 'Send Verification Text'}
               </button>
             </div>
 
             {(smsSent || demoOtpCode) && !isPhoneVerified && (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.5rem",
-                }}
-              >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {demoOtpCode && (
-                  <div style={{ fontSize: "0.8rem", color: textMuted }}>
+                  <div style={{ fontSize: '0.8rem', color: textMuted }}>
                     Text message code: <strong>{demoOtpCode}</strong>
                   </div>
                 )}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "0.65rem",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
+                <div style={{ display: 'flex', gap: '0.65rem', flexWrap: 'wrap', alignItems: 'center' }}>
                   <input
                     type="text"
                     maxLength={6}
                     placeholder="Enter 6-digit SMS code"
                     value={smsCodeInput}
-                    onChange={(e) =>
-                      setSmsCodeInput(e.target.value.replace(/\D/g, ""))
-                    }
-                    style={{ ...inputStyle, maxWidth: "210px" }}
+                    onChange={(e) => setSmsCodeInput(e.target.value.replace(/\D/g, ''))}
+                    style={{ ...inputStyle, maxWidth: '210px' }}
                   />
                   <button
                     type="button"
                     disabled={verifyingSms}
                     onClick={handleVerifySmsCode}
                     style={{
-                      padding: "0.65rem 1rem",
-                      borderRadius: "8px",
-                      border: "none",
-                      backgroundColor: "#16a34a",
-                      color: "#ffffff",
+                      padding: '0.65rem 1rem',
+                      borderRadius: '8px',
+                      border: 'none',
+                      backgroundColor: '#16a34a',
+                      color: '#ffffff',
                       fontWeight: 600,
-                      cursor: "pointer",
+                      cursor: 'pointer',
                     }}
                   >
-                    {verifyingSms ? "Verifying..." : "Verify Code"}
+                    {verifyingSms ? 'Verifying...' : 'Verify Code'}
                   </button>
                 </div>
               </div>
@@ -2582,36 +2436,34 @@ export default function Dashboard({
 
           <div
             style={{
-              fontSize: "0.84rem",
+              fontSize: '0.84rem',
               color: textMuted,
               borderTop: `1px solid ${borderColor}`,
-              paddingTop: "0.85rem",
+              paddingTop: '0.85rem',
             }}
           >
-            Email: <strong>{displayEmail}</strong> · KYC Status:{" "}
-            <strong style={{ textTransform: "capitalize" }}>
-              {displayKyc}
-            </strong>
+            Email: <strong>{displayEmail}</strong> · KYC Status:{' '}
+            <strong style={{ textTransform: 'capitalize' }}>{displayKyc}</strong>
           </div>
         </div>
       )}
 
       <footer
         style={{
-          marginTop: "auto",
-          paddingTop: "1rem",
+          marginTop: 'auto',
+          paddingTop: '1rem',
           borderTop: `1px solid ${borderColor}`,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: "0.5rem",
-          fontSize: "0.8rem",
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
+          fontSize: '0.8rem',
           color: textMuted,
         }}
       >
         <span>Find An Expert</span>
-        <span>Escrow-Protected Advisory &amp; Live Audio</span>
+        <span>Escrow-Protected Advisory &amp; Live Audio/Video</span>
       </footer>
     </main>
   );
