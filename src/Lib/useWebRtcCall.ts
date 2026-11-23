@@ -13,7 +13,7 @@ interface UseWebRtcCallOptions {
 
 interface SignalPayload {
   senderId: string;
-  type: "offer" | "answer" | "ice-candidate" | "ready";
+  type: "offer" | "answer" | "ice-candidate" | "ready" | "hangup";
   sdp?: RTCSessionDescriptionInit;
   candidate?: RTCIceCandidateInit;
 }
@@ -24,6 +24,28 @@ const RTC_CONFIG: RTCConfiguration = {
     { urls: "stun:stun1.l.google.com:19302" },
   ],
 };
+
+function stopAllTracks(stream: MediaStream | null) {
+  if (!stream) return;
+  stream.getTracks().forEach((track) => {
+    try {
+      track.stop();
+    } catch {
+      // Ignore already-stopped track errors
+    }
+  });
+}
+
+function clearMediaElement(el: HTMLMediaElement | null) {
+  if (!el) return;
+  stopAllTracks(el.srcObject instanceof MediaStream ? el.srcObject : null);
+  el.srcObject = null;
+  try {
+    el.load();
+  } catch {
+    // Ignore media element reset errors
+  }
+}
 
 export function useWebRtcCall({
   roomCode,
@@ -46,8 +68,10 @@ export function useWebRtcCall({
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const sessionGenerationRef = useRef<number>(0);
 
   useEffect(() => {
     setIsCameraOff(mode !== "video");
@@ -59,44 +83,57 @@ export function useWebRtcCall({
     }
   }, []);
 
-  const cleanupCall = useCallback(() => {
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
-    if (pcRef.current) {
-      pcRef.current.onicecandidate = null;
-      pcRef.current.ontrack = null;
-      pcRef.current.onconnectionstatechange = null;
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
+  const cleanupCall = useCallback(
+    (nextStatus: "idle" | "ended" = "ended") => {
+      sessionGenerationRef.current += 1;
+
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+      if (pcRef.current) {
+        pcRef.current.onicecandidate = null;
+        pcRef.current.ontrack = null;
+        pcRef.current.onconnectionstatechange = null;
+        pcRef.current.oniceconnectionstatechange = null;
+        try {
+          pcRef.current.close();
+        } catch {
+          // Ignore already-closed peer connection errors
+        }
+        pcRef.current = null;
+      }
+
+      stopAllTracks(localStreamRef.current);
       localStreamRef.current = null;
-    }
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = null;
-    }
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = null;
-    }
-    pendingCandidatesRef.current = [];
-    setRemoteConnected(false);
-    setIsMuted(false);
-    setCallStatus("ended");
-  }, []);
+
+      stopAllTracks(remoteStreamRef.current);
+      remoteStreamRef.current = null;
+
+      clearMediaElement(localVideoRef.current);
+      clearMediaElement(remoteVideoRef.current);
+      clearMediaElement(remoteAudioRef.current);
+
+      pendingCandidatesRef.current = [];
+      setRemoteConnected(false);
+      setIsMuted(false);
+      setIsCameraOff(mode !== "video");
+      setCallStatus(nextStatus);
+    },
+    [mode]
+  );
 
   useEffect(() => {
     if (!active || !roomCode || !userId) {
-      setCallStatus("idle");
+      cleanupCall("idle");
       return;
     }
 
+    const generation = ++sessionGenerationRef.current;
     let cancelled = false;
+    const isStale = () =>
+      cancelled || sessionGenerationRef.current !== generation;
+
     setCallStatus("connecting");
     setMediaError(null);
     setRemoteConnected(false);
@@ -121,8 +158,8 @@ export function useWebRtcCall({
             : false,
         });
 
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+        if (isStale()) {
+          stopAllTracks(stream);
           return;
         }
 
@@ -139,29 +176,38 @@ export function useWebRtcCall({
         });
 
         pc.ontrack = (event) => {
-          const remoteStream = event.streams[0];
-          if (!remoteStream) return;
+          if (isStale()) return;
+          const incomingStream = event.streams[0] || remoteStreamRef.current;
+          if (!incomingStream) return;
+          remoteStreamRef.current = incomingStream;
           if (remoteAudioRef.current) {
-            remoteAudioRef.current.srcObject = remoteStream;
+            remoteAudioRef.current.srcObject = incomingStream;
           }
           if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream;
+            remoteVideoRef.current.srcObject = incomingStream;
           }
           setRemoteConnected(true);
           setCallStatus("connected");
         };
 
-        pc.onconnectionstatechange = () => {
+        const handleConnectionState = () => {
+          if (isStale()) return;
           if (pc.connectionState === "connected") {
             setRemoteConnected(true);
             setCallStatus("connected");
+          } else if (pc.connectionState === "closed") {
+            cleanupCall("ended");
           } else if (
             pc.connectionState === "failed" ||
             pc.connectionState === "disconnected"
           ) {
+            setRemoteConnected(false);
             setCallStatus("connecting");
           }
         };
+
+        pc.onconnectionstatechange = handleConnectionState;
+        pc.oniceconnectionstatechange = handleConnectionState;
 
         const channel = supabase.channel(`webrtc-room-${roomCode}`, {
           config: { broadcast: { self: false } },
@@ -169,6 +215,7 @@ export function useWebRtcCall({
         channelRef.current = channel;
 
         const sendSignal = async (payload: Omit<SignalPayload, "senderId">) => {
+          if (isStale()) return;
           await channel.send({
             type: "broadcast",
             event: "signal",
@@ -180,7 +227,7 @@ export function useWebRtcCall({
         };
 
         pc.onicecandidate = (event) => {
-          if (event.candidate) {
+          if (event.candidate && !isStale()) {
             sendSignal({
               type: "ice-candidate",
               candidate: event.candidate.toJSON(),
@@ -189,7 +236,7 @@ export function useWebRtcCall({
         };
 
         const flushPendingCandidates = async () => {
-          if (!pc.remoteDescription) return;
+          if (!pc.remoteDescription || isStale()) return;
           while (pendingCandidatesRef.current.length > 0) {
             const next = pendingCandidatesRef.current.shift();
             if (next) {
@@ -199,10 +246,12 @@ export function useWebRtcCall({
         };
 
         const createAndSendOffer = async () => {
+          if (isStale()) return;
           const offer = await pc.createOffer({
             offerToReceiveAudio: true,
             offerToReceiveVideo: wantVideo,
           });
+          if (isStale()) return;
           await pc.setLocalDescription(offer);
           await sendSignal({
             type: "offer",
@@ -212,15 +261,19 @@ export function useWebRtcCall({
 
         channel.on("broadcast", { event: "signal" }, async ({ payload }) => {
           const msg = payload as SignalPayload;
-          if (!msg || msg.senderId === userId || cancelled) return;
+          if (!msg || msg.senderId === userId || isStale()) return;
 
           try {
-            if (msg.type === "ready" && isInitiator) {
+            if (msg.type === "hangup") {
+              cleanupCall("ended");
+            } else if (msg.type === "ready" && isInitiator) {
               await createAndSendOffer();
             } else if (msg.type === "offer" && msg.sdp) {
               await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
               await flushPendingCandidates();
+              if (isStale()) return;
               const answer = await pc.createAnswer();
+              if (isStale()) return;
               await pc.setLocalDescription(answer);
               await sendSignal({
                 type: "answer",
@@ -242,7 +295,7 @@ export function useWebRtcCall({
         });
 
         channel.subscribe(async (status) => {
-          if (status === "SUBSCRIBED" && !cancelled) {
+          if (status === "SUBSCRIBED" && !isStale()) {
             await sendSignal({ type: "ready" });
             if (isInitiator) {
               await createAndSendOffer();
@@ -250,7 +303,8 @@ export function useWebRtcCall({
           }
         });
       } catch (err) {
-        if (!cancelled) {
+        if (!isStale()) {
+          cleanupCall("ended");
           setMediaError(
             err instanceof Error
               ? err.message
@@ -264,7 +318,20 @@ export function useWebRtcCall({
 
     return () => {
       cancelled = true;
-      cleanupCall();
+      const activeChannel = channelRef.current;
+      if (activeChannel && userId) {
+        activeChannel
+          .send({
+            type: "broadcast",
+            event: "signal",
+            payload: {
+              type: "hangup",
+              senderId: userId,
+            } satisfies SignalPayload,
+          })
+          .catch(() => {});
+      }
+      cleanupCall("idle");
     };
   }, [active, roomCode, userId, isInitiator, mode, cleanupCall]);
 
@@ -296,9 +363,22 @@ export function useWebRtcCall({
     setIsCameraOff(nextOff);
   };
 
-  const endCall = () => {
-    cleanupCall();
-  };
+  const endCall = useCallback(() => {
+    const activeChannel = channelRef.current;
+    if (activeChannel && userId) {
+      activeChannel
+        .send({
+          type: "broadcast",
+          event: "signal",
+          payload: {
+            type: "hangup",
+            senderId: userId,
+          } satisfies SignalPayload,
+        })
+        .catch(() => {});
+    }
+    cleanupCall("ended");
+  }, [cleanupCall, userId]);
 
   return {
     callStatus,

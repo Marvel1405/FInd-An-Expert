@@ -6,6 +6,8 @@ import {
   Routes,
   useLocation,
 } from "react-router-dom";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "./Lib/supabase";
 import Navbar from "./Components/Navbar";
 import Splashscreen from "./Components/Splashscreen";
 import Home from "./Pages/Home";
@@ -24,6 +26,8 @@ const THEME_STORAGE_KEY = "fae_dark_mode";
 
 function AppShell() {
   const location = useLocation();
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState<boolean>(false);
   const [showSplash, setShowSplash] = useState<boolean>(true);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
@@ -42,6 +46,42 @@ function AppShell() {
       return "default";
     }
   });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!isMounted) return;
+        const currentSession = data.session ?? null;
+        setSession(currentSession);
+        if (currentSession) {
+          setActiveNav("overview");
+        }
+        setAuthReady(true);
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setSession(null);
+        setAuthReady(true);
+      });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) return;
+      const resolved = nextSession ?? null;
+      setSession(resolved);
+      setActiveNav("overview");
+      setAuthReady(true);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 5000);
@@ -69,9 +109,12 @@ function AppShell() {
     }
   };
 
-  if (showSplash) {
+  if (!authReady || showSplash) {
     return <Splashscreen darkMode={darkMode} />;
   }
+
+  const isAuthenticated = Boolean(session);
+  const effectivePath = isAuthenticated ? "/dashboard" : location.pathname;
 
   return (
     <div style={{ minHeight: "100vh", boxSizing: "border-box" }}>
@@ -80,7 +123,7 @@ function AppShell() {
         onToggleTheme={handleToggleTheme}
         activeNav={activeNav}
         onSelectNav={setActiveNav}
-        currentPath={location.pathname}
+        currentPath={effectivePath}
       />
 
       <div
@@ -93,29 +136,56 @@ function AppShell() {
         <Routes>
           <Route
             path="/"
-            element={<Home darkMode={darkMode} wallpaper={wallpaper} />}
+            element={
+              isAuthenticated ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <Home darkMode={darkMode} wallpaper={wallpaper} />
+              )
+            }
           />
           <Route
             path="/signin"
-            element={<Auth darkMode={darkMode} wallpaper={wallpaper} />}
+            element={
+              isAuthenticated ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <Auth darkMode={darkMode} wallpaper={wallpaper} />
+              )
+            }
           />
           <Route
             path="/signup"
-            element={<Auth darkMode={darkMode} wallpaper={wallpaper} />}
+            element={
+              isAuthenticated ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <Auth darkMode={darkMode} wallpaper={wallpaper} />
+              )
+            }
           />
           <Route
             path="/dashboard"
             element={
-              <Dashboard
-                darkMode={darkMode}
-                activeNav={activeNav}
-                onChangeNav={setActiveNav}
-                wallpaper={wallpaper}
-                onChangeWallpaper={handleChangeWallpaper}
-              />
+              isAuthenticated ? (
+                <Dashboard
+                  darkMode={darkMode}
+                  activeNav={activeNav}
+                  onChangeNav={setActiveNav}
+                  wallpaper={wallpaper}
+                  onChangeWallpaper={handleChangeWallpaper}
+                />
+              ) : (
+                <Navigate to="/signin" replace />
+              )
             }
           />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route
+            path="*"
+            element={
+              <Navigate to={isAuthenticated ? "/dashboard" : "/"} replace />
+            }
+          />
         </Routes>
       </div>
     </div>
