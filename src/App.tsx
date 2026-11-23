@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import Navbar from "./Components/Navbar";
 import Splashscreen from "./Components/Splashscreen";
-import Dashboard from "./Pages/Dashboard";
 import Home from "./Pages/Home";
-import SignIn from "./Pages/SignIn";
+import Auth from "./Pages/Auth";
+import Dashboard from "./Pages/Dashboard";
 
 export type DashboardTab =
   | "overview"
@@ -13,72 +19,105 @@ export type DashboardTab =
   | "wallet"
   | "profile";
 
+const WALLPAPER_STORAGE_KEY = "fae_dashboard_wallpaper";
+const THEME_STORAGE_KEY = "fae_dark_mode";
+
 function AppShell() {
   const location = useLocation();
+  const [showSplash, setShowSplash] = useState<boolean>(true);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
-      return localStorage.getItem("theme") === "dark";
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved !== null) return saved === "true";
     } catch {
-      return false;
+      // Ignore storage read errors
+    }
+    return true;
+  });
+  const [activeNav, setActiveNav] = useState<DashboardTab>("overview");
+  const [wallpaper, setWallpaper] = useState<string>(() => {
+    try {
+      return localStorage.getItem(WALLPAPER_STORAGE_KEY) || "default";
+    } catch {
+      return "default";
     }
   });
-  const [showSplash, setShowSplash] = useState<boolean>(true);
-  const [activeNav, setActiveNav] = useState<DashboardTab>("overview");
 
   useEffect(() => {
-    document.title = "Find An Expert";
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("theme", darkMode ? "dark" : "light");
-    } catch {
-      // Ignore storage errors
-    }
-  }, [darkMode]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setShowSplash(false), 1200);
+    const t = setTimeout(() => setShowSplash(false), 5000);
     return () => clearTimeout(t);
   }, []);
+
+  const handleToggleTheme = () => {
+    setDarkMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, String(next));
+      } catch {
+        // Ignore storage write errors
+      }
+      return next;
+    });
+  };
+
+  const handleChangeWallpaper = (nextWallpaper: string) => {
+    setWallpaper(nextWallpaper);
+    try {
+      localStorage.setItem(WALLPAPER_STORAGE_KEY, nextWallpaper);
+    } catch {
+      // Ignore storage quota errors
+    }
+  };
 
   if (showSplash) {
     return <Splashscreen darkMode={darkMode} />;
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundColor: darkMode ? "#0b1020" : "#fdfbf7",
-        color: darkMode ? "#f8fafc" : "#222222",
-        transition: "background-color 0.2s ease, color 0.2s ease",
-      }}
-    >
+    <div style={{ minHeight: "100vh", boxSizing: "border-box" }}>
       <Navbar
         darkMode={darkMode}
-        onToggleTheme={() => setDarkMode((prev) => !prev)}
+        onToggleTheme={handleToggleTheme}
         activeNav={activeNav}
-        onSelectNav={(tab) => setActiveNav(tab)}
+        onSelectNav={setActiveNav}
         currentPath={location.pathname}
       />
 
-      <Routes>
-        <Route path="/" element={<Home darkMode={darkMode} />} />
-        <Route path="/signin" element={<SignIn darkMode={darkMode} />} />
-        <Route path="/login" element={<SignIn darkMode={darkMode} />} />
-        <Route
-          path="/dashboard"
-          element={
-            <Dashboard
-              darkMode={darkMode}
-              activeNav={activeNav}
-              onChangeNav={setActiveNav}
-            />
-          }
-        />
-        <Route path="*" element={<Home darkMode={darkMode} />} />
-      </Routes>
+      <div
+        style={{
+          paddingTop: "58px",
+          minHeight: "100vh",
+          boxSizing: "border-box",
+        }}
+      >
+        <Routes>
+          <Route
+            path="/"
+            element={<Home darkMode={darkMode} wallpaper={wallpaper} />}
+          />
+          <Route
+            path="/signin"
+            element={<Auth darkMode={darkMode} wallpaper={wallpaper} />}
+          />
+          <Route
+            path="/signup"
+            element={<Auth darkMode={darkMode} wallpaper={wallpaper} />}
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <Dashboard
+                darkMode={darkMode}
+                activeNav={activeNav}
+                onChangeNav={setActiveNav}
+                wallpaper={wallpaper}
+                onChangeWallpaper={handleChangeWallpaper}
+              />
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
     </div>
   );
 }

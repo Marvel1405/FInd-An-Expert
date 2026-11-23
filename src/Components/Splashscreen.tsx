@@ -13,30 +13,65 @@ export default function Splashscreen({ darkMode }: SplashscreenProps) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: "0.9rem",
+        gap: "1rem",
+        padding: "1.5rem",
       }}
     >
       <style>{`
-        @keyframes spinIcon {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
+        @keyframes breatheFastExpandContract {
+          0% {
+            transform: scale(0.92);
+            opacity: 0.78;
+          }
+          20% {
+            transform: scale(1.16);
+            opacity: 1;
+          }
+          40% {
+            transform: scale(0.94);
+            opacity: 0.82;
+          }
+          60% {
+            transform: scale(1.16);
+            opacity: 1;
+          }
+          80% {
+            transform: scale(0.94);
+            opacity: 0.82;
+          }
+          100% {
+            transform: scale(1.06);
+            opacity: 0.96;
+          }
         }
       `}</style>
-      <img
-        src="/icon.png"
-        alt="Find An Expert"
+
+      <div
         style={{
-          width: "64px",
-          height: "64px",
-          borderRadius: "16px",
-          animation: "spinIcon 1.2s linear infinite",
+          animation: "breatheFastExpandContract 5s ease-in-out forwards",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: "0.75rem",
         }}
-      />
-      <strong style={{ fontSize: "1.05rem", fontWeight: 700 }}>
-        Find An Expert
-      </strong>
+      >
+        <img
+          src="/icon.png"
+          alt="Find An Expert"
+          style={{
+            width: "72px",
+            height: "72px",
+            borderRadius: "18px",
+            boxShadow: "0 10px 28px rgba(37, 99, 235, 0.22)",
+          }}
+        />
+        <strong style={{ fontSize: "1.15rem", fontWeight: 700 }}>
+          Find An Expert
+        </strong>
+      </div>
+
       <span style={{ fontSize: "0.88rem", fontWeight: 500, opacity: 0.8 }}>
-        Preparing your Find An Expert live advisory hub...
+        Opening Find An Expert...
       </span>
     </div>
   );
