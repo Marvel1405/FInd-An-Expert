@@ -272,6 +272,59 @@ export default function Dashboard({
     text: string;
   } | null>(null);
 
+  const syncWallpaperToAccount = useCallback(
+    async (nextWallpaper: string) => {
+      onChangeWallpaper(nextWallpaper);
+      if (!authUser) return;
+
+      try {
+        await supabase.auth.updateUser({
+          data: { wallpaper: nextWallpaper },
+        });
+
+        await supabase
+          .from("profiles")
+          .update({ wallpaper: nextWallpaper })
+          .eq("id", authUser.id);
+
+        setProfile((prev) =>
+          prev ? ({ ...prev, wallpaper: nextWallpaper } as UserProfile) : prev
+        );
+      } catch {
+        // Keep local wallpaper applied if offline; next login/realtime event reconciles
+      }
+    },
+    [authUser, onChangeWallpaper]
+  );
+
+  useEffect(() => {
+    if (!authUser?.id) return;
+
+    const wallpaperChannel = supabase
+      .channel(`profile-wallpaper-${authUser.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${authUser.id}`,
+        },
+        (payload) => {
+          const nextWp = (payload.new as { wallpaper?: string | null })
+            ?.wallpaper;
+          if (typeof nextWp === "string" && nextWp.length > 0) {
+            onChangeWallpaper(nextWp);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(wallpaperChannel);
+    };
+  }, [authUser?.id, onChangeWallpaper]);
+
   useEffect(() => {
     bookingsRef.current = bookings;
   }, [bookings]);
@@ -481,6 +534,12 @@ export default function Dashboard({
         const resolvedRoleIsConsultant =
           (profileData?.role || user.user_metadata?.role) === "consultant";
 
+        const syncedWallpaper =
+          (profileData as { wallpaper?: string | null } | null)?.wallpaper ||
+          (user.user_metadata?.wallpaper as string) ||
+          "default";
+        onChangeWallpaper(syncedWallpaper);
+
         if (profileData) {
           const typedProfile = profileData as UserProfile;
           setProfile(typedProfile);
@@ -531,7 +590,7 @@ export default function Dashboard({
     return () => {
       active = false;
     };
-  }, [navigate, refreshPortalState]);
+  }, [navigate, onChangeWallpaper, refreshPortalState]);
 
   const {
     callStatus,
@@ -553,7 +612,6 @@ export default function Dashboard({
     mode: activeCallMode,
   });
 
-  // Attempt unmuted playback when remote peer connects and prompt if browser autoplay blocks it
   useEffect(() => {
     if (!liveCallBooking || !remoteConnected) {
       setAudioBlockedNotice(false);
@@ -623,7 +681,6 @@ export default function Dashboard({
     }
   }, [callStatus, forceCloseLocalCall, liveCallBooking]);
 
-  // Global listener: Postgres changes + instant global call-ring broadcast so consultee auto-accepts immediately
   useEffect(() => {
     if (!authUser?.id) return;
 
@@ -752,7 +809,6 @@ export default function Dashboard({
     []
   );
 
-  // Two-way room channel for audio/video switch pop-up, live typing board & both-end hangup
   useEffect(() => {
     if (!activeBookingId || !activeRoomCode) {
       roomChannelRef.current = null;
@@ -1015,13 +1071,13 @@ export default function Dashboard({
     try {
       const compressedDataUrl = await fileToCompressedAttachmentDataUrl(
         file,
-        1280,
-        0.78
+        960,
+        0.72
       );
-      onChangeWallpaper(compressedDataUrl);
+      await syncWallpaperToAccount(compressedDataUrl);
       setFeedback({
         type: "success",
-        text: "Custom dashboard wallpaper applied from your device!",
+        text: "Custom wallpaper saved and synced to your account!",
       });
     } catch (err) {
       setFeedback({
@@ -1379,7 +1435,6 @@ export default function Dashboard({
         () => {}
       );
 
-      // Global ring channel notifies consultee immediately even if not yet in the room channel
       const ringCh = supabase.channel("fae-global-call-ring", {
         config: { broadcast: { self: false } },
       });
@@ -1660,6 +1715,7 @@ export default function Dashboard({
           avatar_url: activeAvatar || null,
           phone: formattedPhone || null,
           phone_verified: nextVerifiedFlag,
+          wallpaper,
         },
       });
       if (authErr) throw new Error(authErr.message);
@@ -1677,6 +1733,7 @@ export default function Dashboard({
         avatar_url: activeAvatar || null,
         phone: formattedPhone || null,
         phone_verified: nextVerifiedFlag,
+        wallpaper,
       };
 
       const query = existing
@@ -4096,7 +4153,7 @@ export default function Dashboard({
                   }}
                 >
                   <strong style={{ fontSize: "0.92rem" }}>
-                    Dashboard Wallpaper
+                    Dashboard Wallpaper (Account Synced)
                   </strong>
                   <label
                     style={{
@@ -4129,7 +4186,7 @@ export default function Dashboard({
                       <button
                         key={wp.id}
                         type="button"
-                        onClick={() => onChangeWallpaper(wp.id)}
+                        onClick={() => syncWallpaperToAccount(wp.id)}
                         style={{
                           padding: "0.45rem 0.85rem",
                           borderRadius: "8px",
@@ -4171,11 +4228,11 @@ export default function Dashboard({
                       }}
                     />
                     <span style={{ fontSize: "0.82rem", color: textMuted }}>
-                      Custom phone wallpaper active
+                      Custom wallpaper synced to account
                     </span>
                     <button
                       type="button"
-                      onClick={() => onChangeWallpaper("default")}
+                      onClick={() => syncWallpaperToAccount("default")}
                       style={{
                         padding: "0.35rem 0.7rem",
                         borderRadius: "7px",
