@@ -46,6 +46,7 @@ interface BookingWithSummary extends DbBooking {
   call_room_code?: string | null;
   call_mode?: CallMediaMode | null;
   complaint_images?: string[] | null;
+  client_id?: string | null;
 }
 
 const WALLPAPER_OPTIONS: { id: string; label: string; cssValue: string }[] = [
@@ -190,6 +191,7 @@ export default function Dashboard({
   >([]);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [bookings, setBookings] = useState<BookingWithSummary[]>([]);
+  const bookingsRef = useRef<BookingWithSummary[]>([]);
   const [transactions, setTransactions] = useState<DbWalletTransaction[]>([]);
   const [withdrawals, setWithdrawals] = useState<DbBankWithdrawal[]>([]);
 
@@ -217,6 +219,7 @@ export default function Dashboard({
   const [bookingCallMode, setBookingCallMode] =
     useState<CallMediaMode>("video");
   const [activeCallMode, setActiveCallMode] = useState<CallMediaMode>("video");
+  const [audioBlockedNotice, setAudioBlockedNotice] = useState<boolean>(false);
 
   // Consultee pop-up prompt when consultant requests audio/video switch
   const [modeSwitchRequest, setModeSwitchRequest] = useState<{
@@ -224,12 +227,13 @@ export default function Dashboard({
     roomCode: string;
   } | null>(null);
 
-  // Live session teaching text input (replaces whiteboard)
+  // Shared two-way live typing board state
   const [showTeachingInput, setShowTeachingInput] = useState<boolean>(true);
   const [teachingText, setTeachingText] = useState<string>("");
-  const [roomChannel, setRoomChannel] = useState<ReturnType<
-    typeof supabase.channel
-  > | null>(null);
+  const [roomSubscribed, setRoomSubscribed] = useState<boolean>(false);
+  const roomChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(
+    null
+  );
 
   // Consultee booking form + complaint images
   const [searchQuery, setSearchQuery] = useState("");
@@ -267,6 +271,10 @@ export default function Dashboard({
     type: "success" | "error";
     text: string;
   } | null>(null);
+
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
 
   useEffect(() => {
     const onResize = () => setIsDesktop(window.innerWidth > 768);
@@ -360,6 +368,47 @@ export default function Dashboard({
 
   const isConsultant = (profile?.role || editRole) === "consultant";
 
+  const triggerConsulteeAutoAccept = useCallback(
+    (incomingBooking: BookingWithSummary, modeOverride?: CallMediaMode) => {
+      const resolvedRoomCode =
+        incomingBooking.call_room_code ||
+        `LIVE-${incomingBooking.id
+          .replace(/-/g, "")
+          .slice(0, 6)
+          .toUpperCase()}`;
+      const resolvedMode: CallMediaMode =
+        modeOverride || incomingBooking.call_mode || "video";
+
+      setAcceptedCallIds((prev) =>
+        prev.includes(incomingBooking.id) ? prev : [...prev, incomingBooking.id]
+      );
+      setActiveCallMode(resolvedMode);
+      setLiveCallBooking((curr) => {
+        if (
+          curr?.id === incomingBooking.id &&
+          curr.call_room_code === resolvedRoomCode
+        ) {
+          return curr;
+        }
+        setLiveSeconds(0);
+        return {
+          ...incomingBooking,
+          call_room_code: resolvedRoomCode,
+          call_mode: resolvedMode,
+          status:
+            incomingBooking.status === "Completed"
+              ? "Completed"
+              : "In Progress",
+        };
+      });
+      setFeedback({
+        type: "success",
+        text: `Incoming ${resolvedMode} call from ${incomingBooking.consultant_name} auto-connected!`,
+      });
+    },
+    []
+  );
+
   const refreshPortalState = useCallback(
     async (userId: string, viewerIsConsultant?: boolean) => {
       const roleIsConsultant =
@@ -394,16 +443,11 @@ export default function Dashboard({
           (item) => item.status === "In Progress" && item.call_room_code
         );
         if (startedByConsultant) {
-          setLiveCallBooking((current) => {
-            if (current?.id === startedByConsultant.id) return current;
-            setActiveCallMode(startedByConsultant.call_mode || "video");
-            setLiveSeconds(0);
-            return startedByConsultant;
-          });
+          triggerConsulteeAutoAccept(startedByConsultant);
         }
       }
     },
-    [isConsultant, loadAvailableConsultants]
+    [isConsultant, loadAvailableConsultants, triggerConsulteeAutoAccept]
   );
 
   useEffect(() => {
@@ -509,6 +553,50 @@ export default function Dashboard({
     mode: activeCallMode,
   });
 
+  // Attempt unmuted playback when remote peer connects and prompt if browser autoplay blocks it
+  useEffect(() => {
+    if (!liveCallBooking || !remoteConnected) {
+      setAudioBlockedNotice(false);
+      return;
+    }
+
+    const tryPlayMedia = async () => {
+      try {
+        if (remoteAudioRef.current) {
+          await remoteAudioRef.current.play();
+        }
+        if (activeCallMode === "video" && remoteVideoRef.current) {
+          await remoteVideoRef.current.play();
+        }
+        setAudioBlockedNotice(false);
+      } catch {
+        setAudioBlockedNotice(true);
+      }
+    };
+
+    tryPlayMedia();
+  }, [
+    activeCallMode,
+    liveCallBooking,
+    remoteAudioRef,
+    remoteConnected,
+    remoteVideoRef,
+  ]);
+
+  const handleUnlockMediaPlayback = async () => {
+    try {
+      if (remoteAudioRef.current) {
+        await remoteAudioRef.current.play();
+      }
+      if (remoteVideoRef.current) {
+        await remoteVideoRef.current.play();
+      }
+      setAudioBlockedNotice(false);
+    } catch {
+      // Browser still requires interaction
+    }
+  };
+
   const endCallRef = useRef(endCall);
   useEffect(() => {
     endCallRef.current = endCall;
@@ -525,6 +613,7 @@ export default function Dashboard({
     }
     setLiveCallBooking(null);
     setModeSwitchRequest(null);
+    setAudioBlockedNotice(false);
     setLiveSeconds(0);
   }, []);
 
@@ -534,16 +623,19 @@ export default function Dashboard({
     }
   }, [callStatus, forceCloseLocalCall, liveCallBooking]);
 
+  // Global listener: Postgres changes + instant global call-ring broadcast so consultee auto-accepts immediately
   useEffect(() => {
     if (!authUser?.id) return;
 
     const channel = supabase
-      .channel(`dashboard-bookings-${authUser.id}`)
+      .channel(`dashboard-bookings-${authUser.id}`, {
+        config: { broadcast: { self: false } },
+      })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "bookings" },
         (payload) => {
-          refreshPortalState(authUser.id).catch(() => {});
+          refreshPortalState(authUser.id, isConsultant).catch(() => {});
 
           const updatedRow = payload.new as BookingWithSummary | undefined;
           if (!updatedRow) return;
@@ -553,15 +645,14 @@ export default function Dashboard({
             updatedRow.status === "In Progress" &&
             updatedRow.call_room_code
           ) {
-            setAcceptedCallIds((prev) =>
-              prev.includes(updatedRow.id) ? prev : [...prev, updatedRow.id]
-            );
-            setLiveCallBooking((curr) => {
-              if (curr?.id === updatedRow.id) return curr;
-              setActiveCallMode(updatedRow.call_mode || "video");
-              setLiveSeconds(0);
-              return updatedRow;
-            });
+            const belongsToUser =
+              bookingsRef.current.some((b) => b.id === updatedRow.id) ||
+              updatedRow.user_id === authUser.id ||
+              updatedRow.client_id === authUser.id;
+
+            if (belongsToUser) {
+              triggerConsulteeAutoAccept(updatedRow);
+            }
           }
 
           if (
@@ -578,18 +669,94 @@ export default function Dashboard({
       )
       .subscribe();
 
+    const globalRingChannel = supabase
+      .channel("fae-global-call-ring", {
+        config: { broadcast: { self: false } },
+      })
+      .on("broadcast", { event: "call-started" }, ({ payload }) => {
+        if (isConsultant || !payload?.bookingId) return;
+        const matchedBooking = bookingsRef.current.find(
+          (b) => b.id === payload.bookingId
+        );
+        if (matchedBooking) {
+          triggerConsulteeAutoAccept(
+            {
+              ...matchedBooking,
+              call_room_code:
+                (payload.roomCode as string) || matchedBooking.call_room_code,
+              call_mode:
+                (payload.mode as CallMediaMode) || matchedBooking.call_mode,
+            },
+            payload.mode as CallMediaMode | undefined
+          );
+        } else {
+          refreshPortalState(authUser.id, false).catch(() => {});
+        }
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(globalRingChannel);
     };
-  }, [authUser?.id, forceCloseLocalCall, isConsultant, refreshPortalState]);
+  }, [
+    authUser?.id,
+    forceCloseLocalCall,
+    isConsultant,
+    refreshPortalState,
+    triggerConsulteeAutoAccept,
+  ]);
 
   const activeRoomCode = liveCallBooking?.call_room_code || "";
   const activeBookingId = liveCallBooking?.id || "";
+  const activeBookingIdRef = useRef<string>(activeBookingId);
+  useEffect(() => {
+    activeBookingIdRef.current = activeBookingId;
+  }, [activeBookingId]);
 
-  // Steady room channel for auto-accept, audio/video switch pop-up, shared teaching text & both-end hangup
+  const broadcastRoomSignal = useCallback(
+    async (
+      roomCode: string,
+      event: string,
+      payload: Record<string, unknown>
+    ) => {
+      const currentCh = roomChannelRef.current;
+      if (currentCh && currentCh.state === "joined") {
+        await currentCh.send({
+          type: "broadcast",
+          event,
+          payload,
+        });
+        return;
+      }
+
+      if (!roomCode) return;
+      const tempCh = supabase.channel(`call-collab-${roomCode}`, {
+        config: { broadcast: { self: false } },
+      });
+      await new Promise<void>((resolve) => {
+        tempCh.subscribe((status) => {
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR") {
+            resolve();
+          }
+        });
+        setTimeout(resolve, 500);
+      });
+      await tempCh.send({
+        type: "broadcast",
+        event,
+        payload,
+      });
+      supabase.removeChannel(tempCh);
+    },
+    []
+  );
+
+  // Two-way room channel for audio/video switch pop-up, live typing board & both-end hangup
   useEffect(() => {
     if (!activeBookingId || !activeRoomCode) {
-      setRoomChannel(null);
+      roomChannelRef.current = null;
+      setRoomSubscribed(false);
       setModeSwitchRequest(null);
       setTeachingText("");
       return;
@@ -597,16 +764,19 @@ export default function Dashboard({
 
     setTeachingText(callNotesRef.current[activeBookingId] || "");
     setModeSwitchRequest(null);
+    setRoomSubscribed(false);
 
     const ch = supabase.channel(`call-collab-${activeRoomCode}`, {
       config: { broadcast: { self: false } },
     });
 
     ch.on("broadcast", { event: "call-started" }, ({ payload }) => {
-      if (!isConsultant && payload?.bookingId === activeBookingId) {
+      if (!isConsultant && payload?.bookingId === activeBookingIdRef.current) {
         const nextMode = (payload?.mode as CallMediaMode) || "video";
         setAcceptedCallIds((prev) =>
-          prev.includes(activeBookingId) ? prev : [...prev, activeBookingId]
+          prev.includes(activeBookingIdRef.current)
+            ? prev
+            : [...prev, activeBookingIdRef.current]
         );
         setActiveCallMode(nextMode);
         setLiveCallBooking((curr) =>
@@ -634,13 +804,22 @@ export default function Dashboard({
 
     ch.on("broadcast", { event: "teaching-text" }, ({ payload }) => {
       if (typeof payload?.text === "string") {
+        const targetBookingId =
+          typeof payload?.bookingId === "string" && payload.bookingId
+            ? payload.bookingId
+            : activeBookingIdRef.current;
         setTeachingText(payload.text);
-        updateCallNote(activeBookingId, payload.text);
+        if (targetBookingId) {
+          updateCallNote(targetBookingId, payload.text);
+        }
       }
     });
 
     ch.on("broadcast", { event: "call-ended" }, ({ payload }) => {
-      if (!payload?.bookingId || payload.bookingId === activeBookingId) {
+      if (
+        !payload?.bookingId ||
+        payload.bookingId === activeBookingIdRef.current
+      ) {
         forceCloseLocalCall();
         setFeedback({
           type: "success",
@@ -649,16 +828,38 @@ export default function Dashboard({
       }
     });
 
-    ch.subscribe();
-    setRoomChannel(ch);
+    roomChannelRef.current = ch;
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        setRoomSubscribed(true);
+        const existingNote = callNotesRef.current[activeBookingIdRef.current];
+        if (existingNote) {
+          ch.send({
+            type: "broadcast",
+            event: "teaching-text",
+            payload: {
+              text: existingNote,
+              bookingId: activeBookingIdRef.current,
+              senderId: authUser?.id || null,
+            },
+          });
+        }
+      } else if (status === "CHANNEL_ERROR" || status === "CLOSED") {
+        setRoomSubscribed(false);
+      }
+    });
 
     return () => {
-      setRoomChannel(null);
+      setRoomSubscribed(false);
+      if (roomChannelRef.current === ch) {
+        roomChannelRef.current = null;
+      }
       supabase.removeChannel(ch);
     };
   }, [
     activeBookingId,
     activeRoomCode,
+    authUser?.id,
     forceCloseLocalCall,
     isConsultant,
     updateCallNote,
@@ -743,38 +944,6 @@ export default function Dashboard({
     return `${mins}:${secs}`;
   };
 
-  const broadcastRoomSignal = async (
-    roomCode: string,
-    event: string,
-    payload: Record<string, unknown>
-  ) => {
-    if (roomChannel) {
-      roomChannel.send({
-        type: "broadcast",
-        event,
-        payload,
-      });
-      return;
-    }
-
-    if (!roomCode) return;
-    const tempCh = supabase.channel(`call-collab-${roomCode}`);
-    await new Promise<void>((resolve) => {
-      tempCh.subscribe((status) => {
-        if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR") {
-          resolve();
-        }
-      });
-      setTimeout(resolve, 400);
-    });
-    await tempCh.send({
-      type: "broadcast",
-      event,
-      payload,
-    });
-    supabase.removeChannel(tempCh);
-  };
-
   const handleSelectCallModeInLiveCall = (targetMode: CallMediaMode) => {
     if (targetMode === activeCallMode) return;
     if (isConsultant) {
@@ -806,14 +975,19 @@ export default function Dashboard({
 
   const handleTeachingTextChange = (nextValue: string) => {
     setTeachingText(nextValue);
-    if (liveCallBooking?.id) {
-      updateCallNote(liveCallBooking.id, nextValue);
+    const targetBookingId = liveCallBooking?.id || activeBookingIdRef.current;
+    const targetRoomCode =
+      liveCallBooking?.call_room_code ||
+      liveCallBookingRef.current?.call_room_code ||
+      "";
+    if (targetBookingId) {
+      updateCallNote(targetBookingId, nextValue);
     }
-    roomChannel?.send({
-      type: "broadcast",
-      event: "teaching-text",
-      payload: { text: nextValue },
-    });
+    broadcastRoomSignal(targetRoomCode, "teaching-text", {
+      text: nextValue,
+      bookingId: targetBookingId,
+      senderId: authUser?.id || null,
+    }).catch(() => {});
   };
 
   const handleWallpaperUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -1123,6 +1297,7 @@ export default function Dashboard({
           consultant_id: selectedConsultant.id,
           complaint_summary: cleanSummary,
           call_room_code: roomCode,
+          call_mode: chosenMode,
         })
         .eq("id", bookingId);
 
@@ -1173,6 +1348,7 @@ export default function Dashboard({
         .from("bookings")
         .update({
           call_room_code: roomCode,
+          call_mode: resolvedMode,
           status: nextStatus,
         })
         .eq("id", booking.id);
@@ -1194,17 +1370,39 @@ export default function Dashboard({
     setLiveSeconds(0);
 
     if (isConsultant) {
-      broadcastRoomSignal(roomCode, "call-started", {
+      const signalPayload = {
         bookingId: booking.id,
         roomCode,
         mode: resolvedMode,
-      }).catch(() => {});
+      };
+      broadcastRoomSignal(roomCode, "call-started", signalPayload).catch(
+        () => {}
+      );
+
+      // Global ring channel notifies consultee immediately even if not yet in the room channel
+      const ringCh = supabase.channel("fae-global-call-ring", {
+        config: { broadcast: { self: false } },
+      });
+      await new Promise<void>((resolve) => {
+        ringCh.subscribe((status) => {
+          if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR") {
+            resolve();
+          }
+        });
+        setTimeout(resolve, 450);
+      });
+      await ringCh.send({
+        type: "broadcast",
+        event: "call-started",
+        payload: signalPayload,
+      });
+      supabase.removeChannel(ringCh);
     }
 
     setFeedback({
       type: "success",
       text: isConsultant
-        ? `Call started! Live ${resolvedMode} session (${roomCode}) auto-connects for "${booking.topic}".`
+        ? `Call started! Live ${resolvedMode} session (${roomCode}) auto-accepted for "${booking.topic}".`
         : `Joined live ${resolvedMode} room ${roomCode} for "${booking.topic}".`,
     });
   };
@@ -1217,14 +1415,14 @@ export default function Dashboard({
     const roomCode = targetBooking?.call_room_code || activeRoomCode;
     const bookingId = targetBooking?.id || activeBookingId;
 
-    forceCloseLocalCall(true);
-
     if (roomCode || bookingId) {
       await broadcastRoomSignal(roomCode, "call-ended", {
         bookingId,
         roomCode,
       }).catch(() => {});
     }
+
+    forceCloseLocalCall(true);
 
     if (options?.completeAndPay && targetBooking && authUser) {
       if (targetBooking.status !== "Completed") {
@@ -1950,7 +2148,7 @@ export default function Dashboard({
             </div>
           )}
 
-          {/* PERSISTENT AUDIO & VIDEO CALL STAGE + TEACHING TEXT INPUT + CALL NOTES */}
+          {/* PERSISTENT AUDIO & VIDEO CALL STAGE + TWO-WAY SHARED TYPING BOARD */}
           {liveCallBooking && (
             <div
               style={{
@@ -1963,6 +2161,43 @@ export default function Dashboard({
               }}
             >
               <audio ref={remoteAudioRef} autoPlay playsInline />
+
+              {audioBlockedNotice && (
+                <div
+                  style={{
+                    padding: "0.65rem 0.9rem",
+                    borderRadius: "8px",
+                    backgroundColor: "#fef3c7",
+                    color: "#92400e",
+                    fontSize: "0.84rem",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span>
+                    Call auto-accepted! Tap to enable live audio/video playback
+                    on this browser.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleUnlockMediaPlayback}
+                    style={{
+                      padding: "0.4rem 0.85rem",
+                      borderRadius: "6px",
+                      border: "none",
+                      backgroundColor: "#d97706",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Enable Call Audio
+                  </button>
+                </div>
+              )}
 
               <div
                 style={{
@@ -2055,9 +2290,7 @@ export default function Dashboard({
                       cursor: "pointer",
                     }}
                   >
-                    {showTeachingInput
-                      ? "Hide Teaching Input"
-                      : "Teaching Text"}
+                    {showTeachingInput ? "Hide Shared Board" : "Shared Board"}
                   </button>
                 </div>
               </div>
@@ -2165,7 +2398,7 @@ export default function Dashboard({
                 </div>
               )}
 
-              {/* SESSION TEACHING TEXT INPUT (REPLACES WHITEBOARD) */}
+              {/* TWO-WAY SHARED LIVE TYPING BOARD */}
               {showTeachingInput && (
                 <div
                   style={{
@@ -2182,29 +2415,32 @@ export default function Dashboard({
                       justifyContent: "space-between",
                       alignItems: "center",
                       gap: "0.5rem",
+                      flexWrap: "wrap",
                     }}
                   >
                     <label
                       htmlFor={`teaching-input-${liveCallBooking.id}`}
                       style={{ fontSize: "0.84rem", fontWeight: 700 }}
                     >
-                      Session Teaching Notes &amp; Text
+                      Shared Live Typing Board (Both Can Type &amp; View)
                     </label>
                     <span
                       style={{
                         fontSize: "0.75rem",
-                        color: "#22c55e",
+                        color: roomSubscribed ? "#22c55e" : textMuted,
                         fontWeight: 600,
                       }}
                     >
-                      Synced &amp; Auto-saved
+                      {roomSubscribed
+                        ? "Live 2-Way Sync · Auto-saved"
+                        : "Connecting Live Board..."}
                     </span>
                   </div>
 
                   <textarea
                     id={`teaching-input-${liveCallBooking.id}`}
-                    rows={4}
-                    placeholder="Type explanations, formulas, steps, or teaching points during the call..."
+                    rows={5}
+                    placeholder="Type documents, drafts, formulas, or notes here—both consultant and consultee see updates live and can type back..."
                     value={teachingText}
                     onChange={(e) => handleTeachingTextChange(e.target.value)}
                     style={{ ...inputStyle, resize: "vertical" }}
